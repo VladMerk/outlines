@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "outlines"
+version = "0.1.0"
+description = ""
+authors = ["VladMerk <merkvladimir@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+langchain = "^0.3.18"
+langchain-community = "^0.3.17"
+langgraph = "^0.2.70"
+langchain-openai = "^0.3.4"
+langchain-ollama = "^0.2.3"
+click = "^8.1.8"
+pydantic = "^2.10.6"
+
+
+[tool.poetry.group.dev.dependencies]
+flake8-pyproject = "^1.2.3"
+ruff = "^0.9.5"
+flake8 = "^7.1.1"
+mypy = "^1.15.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 130
+
+[tool.flake8]
+max-line-length = 130
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
