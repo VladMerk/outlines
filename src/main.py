@@ -23,9 +23,7 @@ graph = graph_builder.compile()
 async def main():
     topic = input("Тема для статьи: ")
 
-    result = await graph.ainvoke(
-        {"topic": topic}
-    )
+    result = await graph.ainvoke({"topic": topic})
 
     print(result["article"])
 
