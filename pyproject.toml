@@ -16,6 +16,7 @@ click = "^8.1.8"
 pydantic = "^2.10.6"
 wikipedia = "^1.4.0"
 duckduckgo-search = "^7.3.2"
+wikipedia-api = "^0.8.1"
 
 
 [tool.poetry.group.dev.dependencies]

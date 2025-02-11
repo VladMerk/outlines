@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 from langgraph.graph import END, START, StateGraph
 
@@ -21,9 +22,13 @@ graph = graph_builder.compile()
 
 
 async def main():
+    os.makedirs("outputs", exist_ok=True)
     topic = input("Тема для статьи: ")
 
     result = await graph.ainvoke({"topic": topic})
+
+    with open(f"outputs/{topic}.md", "w") as file:
+        file.write(result["article"])
 
     print(result["article"])
 

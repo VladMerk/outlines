@@ -5,7 +5,7 @@ from langgraph.prebuilt import create_react_agent
 from llms import llm
 from models import Outline
 from states import ArticleState
-from tools import search_engine
+from tools import search_engine, wikipedia_tool
 
 sections_prompt = ChatPromptTemplate.from_template(
     """Вам необходимо написать раздел большой статьи посвященной теме:
@@ -18,12 +18,22 @@ sections_prompt = ChatPromptTemplate.from_template(
     Краткое описание секции:
     {description}
 
+    Для улучшения качества и формирования ответа вам доступны инструменты:
+    - search_engine - для поиска в интернете
+    - wikipedia - для поиска по Wikipedia
+
     Дайте развернутый и содержательный ответ, соответствующий заголовку секции статьи.
-    Используйте поиск в интернете для получения актуальной информации для формирования ответа.
-    При необходимости используйте формат Markdown, для форматирования текста."""
+    К каждому разделу прикладывайте ссылки на используемый или полезный материал по теме раздела.
+    При необходимости используйте формат Markdown, для форматирования текста.
+    Сслыки форматируйте в виде сносок типа '[1]'."""
 )
 
-agent = create_react_agent(model=llm, tools=[search_engine], debug=True)
+
+agent = create_react_agent(
+    model=llm,
+    tools=[wikipedia_tool, search_engine],
+    # debug=True
+)
 
 section_chain = sections_prompt | agent
 
