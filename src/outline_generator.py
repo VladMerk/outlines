@@ -27,6 +27,6 @@ outline_prompt = ChatPromptTemplate.from_messages(
 @as_runnable
 async def get_outline(state: ArticleState):
     outline_chain = outline_prompt | llm.with_structured_output(Outline)
-    outline = await outline_chain.ainvoke(state["topic"])  # type: ignore
+    outline = Outline.model_validate(await outline_chain.ainvoke(state["topic"]))  # type: ignore
 
-    return {**state, "outline": outline}
+    return {**state, "sections": outline.sections}

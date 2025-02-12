@@ -1,7 +1,12 @@
+import warnings
+
 from langchain.tools import Tool, tool
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
+
+warnings.catch_warnings()
+warnings.simplefilter("ignore")
 
 
 @tool
@@ -16,9 +21,7 @@ async def search_engine(query: str):
 wikipedia_tool = Tool(
     name="Wikipedia",
     func=WikipediaQueryRun(
-        api_wrapper=WikipediaAPIWrapper(
-            top_k_results=3
-        )  # type: ignore
+        api_wrapper=WikipediaAPIWrapper(top_k_results=3)  # type: ignore
     ).run,
     description="Поиск по Wikipedia",
     # verbose=True,

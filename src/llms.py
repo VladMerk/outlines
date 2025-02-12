@@ -6,13 +6,13 @@ from pydantic import SecretStr
 
 load_dotenv()
 
-# llm = ChatOpenAI(
-#     base_url="http://localhost:11434/v1",
-#     api_key=SecretStr("ollama"),
-#     model="mistral-small:24b",
-# )
-
 llm = ChatOpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key=SecretStr("ollama"),
+    model="mistral-nemo",
+)
+
+open_llm = ChatOpenAI(
     api_key=SecretStr(os.getenv('openai_key', "")),
     model="gpt-4o-mini"
 )
