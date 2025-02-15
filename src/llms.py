@@ -12,7 +12,4 @@ llm = ChatOpenAI(
     model="mistral-nemo",
 )
 
-open_llm = ChatOpenAI(
-    api_key=SecretStr(os.getenv('openai_key', "")),
-    model="gpt-4o-mini"
-)
+# llm = ChatOpenAI(api_key=SecretStr(os.getenv("openai_key", "")), model="gpt-4o-mini")
