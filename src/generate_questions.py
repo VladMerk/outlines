@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from pprint import pprint
 from typing import Optional
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -155,30 +156,30 @@ def get_sections_graph() -> CompiledStateGraph:
     return graph_builder.compile(checkpointer=checkpoint)
 
 
-if __name__ == "__main__":
-    from pprint import pprint
+async def sections_subgraph():
+    config = RunnableConfig(configurable={"thread_id": "1"})
+    topic = input("Topic: ")
+    state = {"topic": topic}
 
-    async def main():
-        config = RunnableConfig(configurable={"thread_id": "1"})
-        topic = input("Topic: ")
-        state = {"topic": topic}
+    graph = get_sections_graph()
 
-        graph = get_sections_graph()
-
-        while True:
-            async for chunk in graph.astream(state, config, stream_mode="updates"):
-                if isinstance(chunk, dict) and "__interrupt__" in chunk:
-                    user_input = input(f"{chunk['__interrupt__'][0].value}")
-                    state = Command(resume=user_input)
-                    break
-                else:
-                    # pass
-                    # pprint(chunk)
-                    if isinstance(chunk, dict) and "human_feedback" in chunk:
-                        pprint(chunk["human_feedback"])
-            else:
+    while True:
+        async for chunk in graph.astream(state, config, stream_mode="updates"):
+            if isinstance(chunk, dict) and "__interrupt__" in chunk:
+                user_input = input(f"{chunk['__interrupt__'][0].value}")
+                state = Command(resume=user_input)
                 break
+            else:
+                if not isinstance(chunk, Command):
+                    state = chunk
+        else:
+            break
 
-        pprint(state, indent=2, width=300)
+    return state["human_feedback"]
+
+if __name__ == "__main__":
+    async def main():
+        state = await sections_subgraph()
+        pprint(state, indent=2, width=200)
 
     asyncio.run(main())

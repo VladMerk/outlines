@@ -9,7 +9,7 @@ load_dotenv()
 llm = ChatOpenAI(
     base_url="http://localhost:11434/v1",
     api_key=SecretStr("ollama"),
-    model="qwen2.5",
+    model="qwen2.5:32b",
 )
 
 # llm = ChatOpenAI(api_key=SecretStr(os.getenv("openai_key", "")), model="gpt-4o-mini")
