@@ -1,54 +1,30 @@
 import asyncio
 import uuid
 from pprint import pprint
-from typing import Optional
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import chain as as_runnable
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
-from pydantic import BaseModel, Field
-from typing_extensions import TypedDict
 
 from llms import llm
-from tools import wikipedia_tool
-
-
-class Section(BaseModel):
-    section: str = Field(description="Подтема основной темы статьи.")
-    description: str = Field(description="Краткое содержание подтемы.")
-
-    def __str__(self):
-        return f"{self.section}\n{self.description}"
-
-
-class SectionsList(BaseModel):
-    sections: list[Section] = Field(
-        description="Список подтем для описания основной темы."
-    )
-
-
-class SectionsState(TypedDict):
-    topic: str
-    wishes: Optional[str]
-    sections: Optional[SectionsList]
-    new_sections: Optional[SectionsList]
-    human_answer: str
-
+from models import SectionsList
+from states import SectionsState
 
 sections_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
             "Вы экспертный редактор для написания статей на различные темы."
-            " Пользователь предоставит вопрос или тему для написания статьи. "
+            " Пользователь предоставит вопрос или тему для написания статьи и свои пожелания."
             "Вам необходимо составить список 5-10 ключевых подтем из которых может состоять статья и которые важны для этой темы."
             "Пользователь выберет из этого списка нужные ему подтемы."
-            " Будьте всеобъемлющим и конкретным.",
+            " Будьте всеобъемлющим и конкретным. Учитывайте пожелания пользователя.",
         ),
-        ("user", "Тема: {topic}"),
+        ("user", "Тема: \n{topic}\n\nПожелания: {wishes}"),
     ]
 )
 
@@ -80,7 +56,9 @@ async def generate_questions(state: SectionsState):
     return {
         **state,
         "sections": SectionsList.model_validate(
-            await generate_question_chain.ainvoke({"topic": state["topic"]})
+            await generate_question_chain.ainvoke(
+                {"topic": state["topic"], "wishes": state["wishes"]}
+            )
         ).sections,
     }
 
@@ -93,7 +71,7 @@ async def select_sections(state: SectionsState):
     sections = state["sections"]
     if sections:
         for i, section in enumerate(sections):
-            print(f"[{i+1}] {section.section}:\n{section.description}\n")
+            print(f"[{i+1}] {section.section}:\n{section.description} ")  # type: ignore
     answer = interrupt(
         "Выберите подтемы, которые вы хотели бы удалить: ",
     )
@@ -106,7 +84,7 @@ async def get_human_feedback(state: SectionsState):
     answer = state["human_answer"]
     human_sections = list(map(int, [a.strip() for a in answer.split(",")]))
     new_sections = [
-        t for i, t in enumerate(state["sections"]) if i + 1 not in human_sections
+        t for i, t in enumerate(state["sections"]) if i + 1 not in human_sections  # type: ignore
     ]
 
     return {**state, "new_sections": new_sections}
@@ -120,18 +98,17 @@ async def get_user_end(state: SectionsState):
 
 async def add_sections(state: SectionsState):
     print("\n\n+++++++++++++DEBUG(add_sections)++++++++++++++\n")
-    # print("\n+++++++++++++++DEBUG:", add_sections_prompt.format(**{'topic': state["topic"], 'sections': "\n\n".join([str(section) for section in state["new_sections"]])}))
     sections = SectionsList.model_validate(
         await add_sections_chain.ainvoke(
             {
                 "topic": state["topic"],
                 "sections": "\n\n".join(
-                    [str(section) for section in state["new_sections"]]
+                    [str(section) for section in state["new_sections"]]  # type: ignore
                 ),
             }
         )
     ).sections
-    return {**state, "sections": list(state["new_sections"]) + sections}
+    return {**state, "sections": list(state["new_sections"]) + sections}  # type: ignore
 
 
 def get_sections_graph() -> CompiledStateGraph:
@@ -156,10 +133,12 @@ def get_sections_graph() -> CompiledStateGraph:
     return graph_builder.compile(checkpointer=checkpoint)
 
 
-async def sections_subgraph():
-    config = RunnableConfig(configurable={"thread_id": "1"})
-    topic = input("Topic: ")
-    state = {"topic": topic}
+@as_runnable
+async def sections_subgraph(state: SectionsState):
+    config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
+    # topic = input("Topic: ")
+    # wishes = input("Ваши пожелания к написанию статьи: ")
+    state = {"topic": state["topic"], "wishes": state["wishes"]}
 
     graph = get_sections_graph()
 
@@ -175,9 +154,11 @@ async def sections_subgraph():
         else:
             break
 
-    return state["human_feedback"]
+    return {**state, "sections": "\n".join([str(section) for section in state["human_feedback"]["sections"]])}  # type: ignore
+
 
 if __name__ == "__main__":
+
     async def main():
         state = await sections_subgraph()
         pprint(state, indent=2, width=200)
