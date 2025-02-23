@@ -66,8 +66,7 @@ add_sections_chain = add_sections_prompt | llm.with_structured_output(SectionsLi
 
 
 async def select_sections(state: SectionsState):
-    sections = state["sections"]
-    if sections:
+    if sections := state["sections"]:
         for i, section in enumerate(sections):
             print(f"[{i+1}] {section.section}:\n{section.description} ")  # type: ignore
     # answer = interrupt(
