@@ -8,7 +8,6 @@ from langchain_core.runnables import chain as as_runnable
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Command, interrupt
 
 from llms import llm
 from models import SectionsList
@@ -52,7 +51,7 @@ generate_question_chain = sections_prompt | llm.with_structured_output(SectionsL
 
 
 async def generate_questions(state: SectionsState):
-    print("\n\n+++++++++++++++++DEBUG(generate_questions)+++++++++++++++++++++++")
+
     return {
         **state,
         "sections": SectionsList.model_validate(
@@ -67,37 +66,44 @@ add_sections_chain = add_sections_prompt | llm.with_structured_output(SectionsLi
 
 
 async def select_sections(state: SectionsState):
-    print("\n\n++++++++++++++++++++++++DEBUG(select_sections)+++++++++++\n")
     sections = state["sections"]
     if sections:
         for i, section in enumerate(sections):
             print(f"[{i+1}] {section.section}:\n{section.description} ")  # type: ignore
-    answer = interrupt(
-        "Выберите подтемы, которые вы хотели бы удалить: ",
+    # answer = interrupt(
+    #     "Выберите подтемы, которые вы хотели бы удалить: ",
+    # )
+    answer = await asyncio.get_event_loop().run_in_executor(
+        None, input, "> Выберите подтемы, которые вы хотели бы удалить: "
     )
 
     return {**state, "human_answer": answer}
 
 
 async def get_human_feedback(state: SectionsState):
-    print("\n\n+++++++++++++++++DEBUG(get_human_feedback)+++++++++++++++++++++++")
     answer = state["human_answer"]
-    human_sections = list(map(int, [a.strip() for a in answer.split(",")]))
-    new_sections = [
-        t for i, t in enumerate(state["sections"]) if i + 1 not in human_sections  # type: ignore
-    ]
+    # human_sections = list(map(int, [a.strip() for a in answer.split(",")]))
+    if answer and answer != "0":
+        human_sections = list(map(int, [a.strip() for a in answer.split(",")]))
+        new_sections = [
+            t for i, t in enumerate(state["sections"]) if i + 1 not in human_sections  # type: ignore
+        ]
+    else:
+        new_sections = state["sections"]
 
     return {**state, "new_sections": new_sections}
 
 
 async def get_user_end(state: SectionsState):
-    print("\n\n+++++++++++++++++DEBUG(get_user_end)+++++++++++++++++++++++")
-    answer = interrupt("Достаточно или нет? yes/no: ")
+
+    answer = await asyncio.get_event_loop().run_in_executor(
+        None, input, "> Достаточно или нет? yes/no: "
+    )
     return answer == "yes"
 
 
 async def add_sections(state: SectionsState):
-    print("\n\n+++++++++++++DEBUG(add_sections)++++++++++++++\n")
+
     sections = SectionsList.model_validate(
         await add_sections_chain.ainvoke(
             {
@@ -136,31 +142,21 @@ def get_sections_graph() -> CompiledStateGraph:
 @as_runnable
 async def sections_subgraph(state: SectionsState):
     config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
-    # topic = input("Topic: ")
-    # wishes = input("Ваши пожелания к написанию статьи: ")
-    state = {"topic": state["topic"], "wishes": state["wishes"]}
 
-    graph = get_sections_graph()
+    state = await get_sections_graph().ainvoke(state, config=config)  # type: ignore
 
-    while True:
-        async for chunk in graph.astream(state, config, stream_mode="updates"):
-            if isinstance(chunk, dict) and "__interrupt__" in chunk:
-                user_input = input(f"{chunk['__interrupt__'][0].value}")
-                state = Command(resume=user_input)
-                break
-            else:
-                if not isinstance(chunk, Command):
-                    state = chunk
-        else:
-            break
+    # return result
 
-    return {**state, "sections": "\n".join([str(section) for section in state["human_feedback"]["sections"]])}  # type: ignore
+    return {**state, "sections": "\n".join([str(section) for section in state["new_sections"]])}  # type: ignore
 
 
 if __name__ == "__main__":
 
     async def main():
-        state = await sections_subgraph()
-        pprint(state, indent=2, width=200)
+        config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
+        state = await get_sections_graph().ainvoke(
+            {"topic": "docker", "wishes": "docker-compose.toml"}, config
+        )
+        pprint(state, indent=1, width=300)
 
     asyncio.run(main())

@@ -28,8 +28,8 @@ graph = graph_builder.compile()
 
 async def main():
     os.makedirs("outputs", exist_ok=True)
-    topic = input("Тема для статьи: ")
-    wishes = input("Пожелания к статье: ")
+    topic = await asyncio.get_event_loop().run_in_executor(None, input, "Тема для статьи: ")
+    wishes = await asyncio.get_event_loop().run_in_executor(None, input, "Пожелания к статье: ")
 
     result = await graph.ainvoke({"topic": topic, "wishes": wishes})
 
