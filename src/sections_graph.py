@@ -65,7 +65,7 @@ async def chatbot(state: SectionState):
     topic = state["topic"]
     sections = [Section.model_validate(section) for section in state["sections"]]
 
-    results = []
+    results: list[AIMessage] = []
     for section in sections:
         result = await section_chain.ainvoke(
             {
@@ -74,10 +74,11 @@ async def chatbot(state: SectionState):
                 "description": section.content,
             }
         )
-        for message in result["messages"]:
-            if isinstance(message, AIMessage):
-                results.append(message)
-
+        results.extend(
+            message
+            for message in result["messages"]
+            if isinstance(message, AIMessage)
+        )
     return {"sections": [message.content for message in results], "messages": results}
 
 

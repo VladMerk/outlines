@@ -13,9 +13,7 @@ warnings.simplefilter("ignore")
 async def search_engine(query: str):
     """Search engine to the internet"""
     search = DuckDuckGoSearchResults(num_results=4)
-    results = await search.arun(query)
-
-    return results
+    return await search.arun(query)
 
 
 wikipedia_tool = Tool(
