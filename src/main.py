@@ -13,7 +13,6 @@ graph_builder = StateGraph(ArticleState)
 graph_builder.add_node("sections_subgraph", sections_subgraph)
 graph_builder.add_node("outlines", get_outline)
 graph_builder.add_node("sections_graph", sections_graph)
-
 graph_builder.add_node("get_article", get_article)
 
 graph_builder.add_edge(START, "sections_subgraph")

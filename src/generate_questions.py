@@ -27,24 +27,47 @@ sections_prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
+# add_sections_prompt = ChatPromptTemplate.from_messages(
+#     [
+#         (
+#             "system",
+#             "Вы технический редактор статей."
+#             " Пользователь хочет получить статью по вопросу: {topic}."
+#             " Уже добавлены несколько подтем для статьи:"
+#             "\n{sections}"
+#             "\n\nсходя из пожеланий пользователя:"
+#             "\n{wishes}"
+#             "Сформируйте еще несколько тем, которые помогут раскрыть основной запрос пользователя."
+#             "Темы должны логично дополнять уже существующие подтемы, но не дублировать их, а только расширять."
+#             "Если пожеланий нет, тогда просто следуйте направлению вопроса и уже созданных подтем, для большего раскрытия вопроса"
+#             "Для форматирования текста используйте формат Markdown.",
+#         )
+#     ]
+# )
+
 add_sections_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "Вы технический редактор статей."
-            " Пользователь хочет получить статью по вопросу: {topic}."
-            " Уже добавлены несколько подтем для статьи:"
-            "\n\n{sections}"
-            "\n\nВам необходимо предложить **ещё 5-10 новых подтем**, которые логично дополняют существующие, "
-            "но **не дублируют их**. Они должны углублять понимание темы и охватывать важные аспекты, "
-            "которые пока не были затронуты."
-            # "\n\n⚠ **Формат ответа:**\n"
-            # "- Название подтемы\n"
-            # "- Краткое описание (1-2 предложения, зачем эта подтема нужна)"
-            "Для форматирования текста используйте формат Markdown.",
+            "Вы технический редактор статей. "
+            "Пользователь хочет получить статью по вопросу: {topic}. "
+            "Уже добавлены несколько подтем для статьи: "
+            "\n{sections}"
+            "\n\n📌 **ВАЖНО**: "
+            "- **Не повторяйте уже существующие подтемы**. "
+            "- **Предлагайте только новые подтемы, которые логично дополняют статью**. "
+            "- **Расширяйте охват темы, но не дублируйте информацию**. "
+            "- **Если тема исчерпана, предложите уточняющие аспекты**. "
+            "\n\n🔹 Исходя из пожеланий пользователя: "
+            "\n{wishes}"
+            "\n\n**Формат ответа:**\n"
+            "- Новая подтема 1: [Краткое описание]\n"
+            "- Новая подтема 2: [Краткое описание]\n"
+            "- Новая подтема 3: [Краткое описание]\n"
         )
     ]
 )
+
 
 llm.temperature = 0.5
 generate_question_chain = sections_prompt | llm.with_structured_output(SectionsList)
@@ -69,9 +92,7 @@ async def select_sections(state: SectionsState):
     if sections := state["sections"]:
         for i, section in enumerate(sections):
             print(f"[{i+1}] {section.section}:\n{section.description} ")  # type: ignore
-    # answer = interrupt(
-    #     "Выберите подтемы, которые вы хотели бы удалить: ",
-    # )
+
     answer = await asyncio.get_event_loop().run_in_executor(
         None, input, "> Выберите подтемы, которые вы хотели бы удалить: "
     )
@@ -107,13 +128,22 @@ async def add_sections(state: SectionsState):
         await add_sections_chain.ainvoke(
             {
                 "topic": state["topic"],
+                "wishes": state["wishes"],
                 "sections": "\n\n".join(
                     [str(section) for section in state["new_sections"]]  # type: ignore
                 ),
             }
         )
     ).sections
-    return {**state, "sections": list(state["new_sections"]) + sections}  # type: ignore
+    return {**state, "sections": list(state["new_sections"]) + sections}
+
+
+async def get_wishes(state: SectionsState):
+    wishes = await asyncio.get_event_loop().run_in_executor(
+        None, input, "> Пожелания: "
+    )
+
+    return {**state, "wishes": wishes}
 
 
 def get_sections_graph() -> CompiledStateGraph:
@@ -124,13 +154,15 @@ def get_sections_graph() -> CompiledStateGraph:
     graph_builder.add_node("select_sections", select_sections)
     graph_builder.add_node("human_feedback", get_human_feedback)
     graph_builder.add_node("add_sections", add_sections)
+    graph_builder.add_node("get_wishes", get_wishes)
 
     graph_builder.add_edge(START, "generate_sections")
     graph_builder.add_edge("generate_sections", "select_sections")
     graph_builder.add_edge("select_sections", "human_feedback")
     graph_builder.add_conditional_edges(
-        "human_feedback", get_user_end, {True: END, False: "add_sections"}
+        "human_feedback", get_user_end, {True: END, False: "get_wishes"}
     )
+    graph_builder.add_edge("get_wishes", "add_sections")
     graph_builder.add_edge("add_sections", "select_sections")
 
     checkpoint = MemorySaver()
@@ -143,8 +175,6 @@ async def sections_subgraph(state: SectionsState):
     config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
 
     state = await get_sections_graph().ainvoke(state, config=config)  # type: ignore
-
-    # return result
 
     return {**state, "sections": "\n".join([str(section) for section in state["new_sections"]])}  # type: ignore
 

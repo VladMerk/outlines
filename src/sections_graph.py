@@ -15,27 +15,6 @@ class SectionState(TypedDict):
     messages: Annotated[list, add_messages]
 
 
-# sections_prompt = ChatPromptTemplate.from_template(
-#     """Вам необходимо написать раздел большой статьи посвященной теме:
-
-#     {topic}.
-
-#     Заголовок раздела статьи:
-#     {title}
-
-#     Краткое описание секции:
-#     {description}
-
-#     Для улучшения качества и формирования ответа вам доступны инструменты:
-#     - search_engine - для поиска в интернете
-#     - wikipedia - для поиска по Wikipedia
-
-#     Дайте развернутый и содержательный ответ, соответствующий заголовку секции статьи.
-#     К каждому разделу прикладывайте ссылки на используемый или полезный материал по теме раздела.
-#     При необходимости используйте формат Markdown, для форматирования текста.
-#     Ссылки форматируйте в виде сносок типа '[1]'."""
-# )
-
 sections_prompt = ChatPromptTemplate.from_template(
     """Вам необходимо написать **содержательную часть** раздела статьи на тему:
 
@@ -75,9 +54,7 @@ async def chatbot(state: SectionState):
             }
         )
         results.extend(
-            message
-            for message in result["messages"]
-            if isinstance(message, AIMessage)
+            message for message in result["messages"] if isinstance(message, AIMessage)
         )
     return {"sections": [message.content for message in results], "messages": results}
 
