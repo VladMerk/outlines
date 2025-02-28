@@ -33,3 +33,6 @@ class SectionsList(BaseModel):
     sections: list[SubSection] = Field(
         description="Список подтем для описания основной темы."
     )
+
+    def __str__(self):
+        return "\n".join([str(section) for section in self.sections])
