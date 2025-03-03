@@ -5,19 +5,16 @@ from langgraph.graph import END, START, StateGraph
 
 from generate_article import get_article
 from generate_questions import sections_subgraph
-from outline_generator import get_outline
 from sections_graph import graph as sections_graph
 from states import ArticleState
 
 graph_builder = StateGraph(ArticleState)
 graph_builder.add_node("sections_subgraph", sections_subgraph)
-graph_builder.add_node("outlines", get_outline)
 graph_builder.add_node("sections_graph", sections_graph)
 graph_builder.add_node("get_article", get_article)
 
 graph_builder.add_edge(START, "sections_subgraph")
-graph_builder.add_edge("sections_subgraph", "outlines")
-graph_builder.add_edge("outlines", "sections_graph")
+graph_builder.add_edge("sections_subgraph", "sections_graph")
 graph_builder.add_edge("sections_graph", "get_article")
 
 graph_builder.add_edge("get_article", END)

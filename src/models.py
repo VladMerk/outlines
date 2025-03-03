@@ -30,7 +30,7 @@ class SubSection(BaseModel):
 
 
 class SectionsList(BaseModel):
-    sections: list[SubSection] = Field(
+    sections: list[Section] = Field(
         description="Список подтем для описания основной темы."
     )
 

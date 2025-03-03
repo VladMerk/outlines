@@ -73,7 +73,7 @@ async def display_sections(state: SectionsState):
 
     print("\nТекущий список подтем:")
     for i, section in enumerate(sections, start=1):
-        print(f"[{i}] {section.section.capitalize()}:\n\t{section.description}")
+        print(f"[{i}] {section.section_title.capitalize()}:\n\t{section.content}")
 
     return state
 
@@ -106,7 +106,7 @@ async def human_node(state: SectionsState):
 async def end_node(state: SectionsState):
     print("\nFinal node and finished values:")
     for i, section in enumerate(state["sections"].sections, start=1):
-        print(f"[{i}] {section.section}\n\t{section.description}")
+        print(f"[{i}] {section.section_title}\n\t{section.content}")
 
     return Command(goto=END)
 
@@ -150,7 +150,7 @@ async def sections_subgraph(state: SectionsState):
                     if user_feedback.lower() == "done":
                         break
 
-    return graph.get_state(config).values
+    return graph.get_state(config).values["sections"]
 
 
 if __name__ == "__main__":
