@@ -32,6 +32,7 @@ async def main():
     with open(f"outputs/{topic}.md", "w") as file:
         file.write(result["article"])
 
+    os.system("clear")
     print(result["article"])
 
 
