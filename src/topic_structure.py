@@ -14,14 +14,13 @@ from llms import think_llm
 from models import SectionsList
 
 
-class SectionsState(TypedDict):
+class OutlineState(TypedDict):
     topic: str
     wishes: Annotated[list[str], add_messages]
     sections: SectionsList
 
 
-async def first_node(state: SectionsState):
-    print("\n=============First Node===============")
+async def generate_outline(state: OutlineState):
 
     topic = state["topic"]
     wishes = (
@@ -66,8 +65,7 @@ async def first_node(state: SectionsState):
     return {"sections": sections, "wishes": state["wishes"]}
 
 
-async def display_sections(state: SectionsState):
-    print("\n========Display Sections===========")
+async def display_sections(state: OutlineState):
 
     sections = SectionsList.model_validate(state["sections"]).sections
 
@@ -78,8 +76,7 @@ async def display_sections(state: SectionsState):
     return state
 
 
-async def human_node(state: SectionsState):
-    print("\n===========Human Node=================")
+async def process_user_feedback(state: OutlineState):
 
     user_feedback: str = interrupt(
         {
@@ -99,11 +96,11 @@ async def human_node(state: SectionsState):
 
     return Command(
         update={"wishes": new_wishes},
-        goto="first_node",
+        goto="generate_outline",
     )
 
 
-async def end_node(state: SectionsState):
+async def finalize_outline(state: OutlineState):
     print("\nFinal node and finished values:")
     for i, section in enumerate(state["sections"].sections, start=1):
         print(f"[{i}] {section.section_title}\n\t{section.content}")
@@ -112,18 +109,18 @@ async def end_node(state: SectionsState):
 
 
 def get_graph():
-    graph_builder = StateGraph(SectionsState)
+    graph_builder = StateGraph(OutlineState)
 
-    graph_builder.add_node("first_node", first_node)
+    graph_builder.add_node("generate_outline", generate_outline)
     graph_builder.add_node("display_sections", display_sections)
-    graph_builder.add_node("human_node", human_node)
-    graph_builder.add_node("end_node", end_node)
+    graph_builder.add_node("process_user_feedback", process_user_feedback)
+    graph_builder.add_node("finalize_outline", finalize_outline)
 
-    graph_builder.add_edge(START, "first_node")
-    graph_builder.add_edge("first_node", "display_sections")
-    graph_builder.add_edge("display_sections", "human_node")
+    graph_builder.add_edge(START, "generate_outline")
+    graph_builder.add_edge("generate_outline", "display_sections")
+    graph_builder.add_edge("display_sections", "process_user_feedback")
 
-    graph_builder.set_finish_point("end_node")
+    graph_builder.set_finish_point("finalize_outline")
 
     checkpointer = MemorySaver()
 
@@ -131,7 +128,7 @@ def get_graph():
 
 
 @as_runnable
-async def sections_subgraph(state: SectionsState):
+async def content_generator(state: OutlineState):
     config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
 
     graph = get_graph()
@@ -164,7 +161,7 @@ if __name__ == "__main__":
             None, input, "> Пожелания: "
         )
 
-        result = await sections_subgraph.ainvoke(
+        result = await content_generator.ainvoke(
             input={"topic": topic, "wishes": wishes}, config=config  # type: ignore
         )
 

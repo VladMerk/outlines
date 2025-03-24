@@ -1,7 +1,7 @@
 from states import ArticleState
 
 
-async def get_article(state: ArticleState):
+async def assemble_article(state: ArticleState):
     topic = state["topic"]
     sections: list[str] = state["sections"]
 

@@ -13,7 +13,7 @@ class ArticleState(TypedDict):
     article: str
 
 
-class SectionsState(TypedDict):
+class OutlineState(TypedDict):
     topic: str
     wishes: Optional[str]
     sections: Optional[SectionsList]

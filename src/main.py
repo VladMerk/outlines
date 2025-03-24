@@ -3,21 +3,21 @@ import os
 
 from langgraph.graph import END, START, StateGraph
 
-from generate_article import get_article
-from generate_questions import sections_subgraph
-from sections_graph import graph as sections_graph
+from article_assembler import assemble_article
+from content_generator import graph as outline_generator
 from states import ArticleState
+from topic_structure import content_generator
 
 graph_builder = StateGraph(ArticleState)
-graph_builder.add_node("sections_subgraph", sections_subgraph)
-graph_builder.add_node("sections_graph", sections_graph)
-graph_builder.add_node("get_article", get_article)
+graph_builder.add_node("sections_subgraph", content_generator)
+graph_builder.add_node("outline_generator", outline_generator)
+graph_builder.add_node("assemble_article", assemble_article)
 
 graph_builder.add_edge(START, "sections_subgraph")
-graph_builder.add_edge("sections_subgraph", "sections_graph")
-graph_builder.add_edge("sections_graph", "get_article")
+graph_builder.add_edge("sections_subgraph", "outline_generator")
+graph_builder.add_edge("outline_generator", "assemble_article")
 
-graph_builder.add_edge("get_article", END)
+graph_builder.add_edge("assemble_article", END)
 
 graph = graph_builder.compile()
 
