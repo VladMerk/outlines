@@ -12,14 +12,14 @@ warnings.simplefilter("ignore")
 @tool
 async def search_engine(query: str):
     """Search engine to the internet"""
-    search = DuckDuckGoSearchResults(num_results=4)
+    search = DuckDuckGoSearchResults(num_results=5)
     return await search.arun(query)
 
 
 wikipedia_tool = Tool(
     name="Wikipedia",
     func=WikipediaQueryRun(
-        api_wrapper=WikipediaAPIWrapper(top_k_results=3)  # type: ignore
+        api_wrapper=WikipediaAPIWrapper(top_k_results=5)  # type: ignore
     ).run,
     description="Поиск по Wikipedia",
     # verbose=True,

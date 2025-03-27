@@ -17,6 +17,8 @@ pydantic = "^2.10.6"
 wikipedia = "^1.4.0"
 duckduckgo-search = "^7.3.2"
 wikipedia-api = "^0.8.1"
+sentence-transformers = "^4.0.1"
+chromadb = "^0.6.3"
 
 
 [tool.poetry.group.dev.dependencies]

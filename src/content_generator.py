@@ -1,4 +1,6 @@
 from langchain.prompts import ChatPromptTemplate
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph, add_messages
 from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
@@ -75,6 +77,40 @@ async def research_phase(state: ContentGenerationState):
         )
 
     return {**state, "research_results": research_results, "messages": results}
+
+
+async def vector_store_node(state: ContentGenerationState):
+    # Инициализация векторного хранилища с локальной моделью эмбеддингов
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    vectorstore = Chroma(embedding_function=embeddings)
+
+    # Индексация собранных данных
+    for research in state["research_results"]:
+        if research["research_data"]:  # Проверка на пустые данные
+            vectorstore.add_texts(
+                texts=[research["research_data"]],
+                metadatas=[
+                    {"section": research["section_title"], "topic": state["topic"]}
+                ],
+            )
+
+    # Поиск релевантной информации для каждой секции
+    enhanced_results = []
+    for research in state["research_results"]:
+        query = f"{state['topic']} {research['section_title']}"
+        similar_docs = vectorstore.similarity_search(query, k=3)
+
+        # Объединение найденной информации с исходными данными
+        enhanced_data = research["research_data"]
+        if similar_docs:
+            additional_content = "\n\n".join([doc.page_content for doc in similar_docs])
+            enhanced_data += f"\n\n### Связанная информация:\n\n{additional_content}"
+
+        enhanced_results.append(
+            {"section_title": research["section_title"], "research_data": enhanced_data}
+        )
+
+    return {**state, "research_results": enhanced_results}
 
 
 async def planning_phase(state: ContentGenerationState):
@@ -180,10 +216,12 @@ graph_builder.add_node("tools", tool_node)
 graph_builder.add_node("research_phase", research_phase)
 graph_builder.add_node("planning_phase", planning_phase)
 graph_builder.add_node("writing_phase", writing_phase)
+graph_builder.add_node("vector_store_node", vector_store_node)
 
 graph_builder.add_edge("tools", "research_phase")
 graph_builder.add_edge(START, "research_phase")
-graph_builder.add_edge("research_phase", "planning_phase")
+graph_builder.add_edge("research_phase", "vector_store_node")
+graph_builder.add_edge("vector_store_node", "planning_phase")
 graph_builder.add_edge("planning_phase", "writing_phase")
 graph_builder.add_edge("writing_phase", END)
 
