@@ -147,7 +147,7 @@ async def planning_phase(state: ContentGenerationState):
                 topic=topic,
                 title=research["section_title"],
                 research_data=research["research_data"],
-            )
+            ),
         )
 
         plans.append(
@@ -190,6 +190,7 @@ async def writing_phase(state: ContentGenerationState):
     plans = state["plans"]
     research_results = state["research_results"]
     final_sections = []
+    llm.temperature = 0.3
 
     for i, plan in enumerate(plans):
         research_data = research_results[i]["research_data"]
@@ -200,7 +201,7 @@ async def writing_phase(state: ContentGenerationState):
                 title=plan["section_title"],
                 plan=plan["plan"],
                 research_data=research_data,
-            )
+            ),
         )
 
         final_sections.append(result.content)
