@@ -16,7 +16,7 @@ load_dotenv()
 # think_llm = ChatOpenAI(
 #     base_url="http://localhost:11434/v1",
 #     api_key=SecretStr("ollama"),
-#     model="mistral-nemo",
+#     model="qwq",
 # )
 
 

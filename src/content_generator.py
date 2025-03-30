@@ -13,10 +13,12 @@ from tools import search_engine, wikipedia_tool
 
 class ContentGenerationState(TypedDict):
     topic: str
+    wishes: str
     sections: SectionsList
     messages: Annotated[list, add_messages]
     research_results: list[dict[str, str]]
     plans: list[dict[str, str]]
+    writer_role: str
 
 
 async def research_phase(state: ContentGenerationState):
@@ -160,17 +162,64 @@ async def planning_phase(state: ContentGenerationState):
     }
 
 
+async def role_selector_phase(state: ContentGenerationState):
+    topic = state["topic"]
+    wishes = state["wishes"]
+
+    prompt = ChatPromptTemplate.from_template(
+        """
+        На основе темы и пожеланий пользователя (если они есть) определите, кто должен быть автором текста.
+
+        Формат ответа:
+        Должность
+
+        Пример:
+            Тема: Алгоритм быстрой сортировки
+            Пожелания: подробные объснения как работает алогоритм и примеры кода на Python.
+
+            Ответ: Python-программист, преподаватель университета.
+            ---
+
+            Тема: Развитие сюрреализма в цифровом искусстве
+            Пожелания: рассказать об истории и влиянии
+
+            Ответ: Историк современного искусства.
+            ---
+
+            Тема: История США конца XVIII века
+            Пожелания: развитие сельского хозяйства в США в этот период
+
+            Ответ: Историк, преподаватель истории США
+
+        Теперь, пожалуйста, сформулируйте должность для следующей темы:
+        - Тема: {topic}
+        - Пожелания: {wishes}
+
+        нужно вернуть только должность, без дополнений и посторонних слов.
+        """
+    )
+
+    result = await llm.ainvoke(prompt.format(
+        topic=topic,
+        wishes=wishes
+    ))
+
+    return {**state, "writer_role": result.content}
+
+
 async def writing_phase(state: ContentGenerationState):
     writing_prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                "Вы - опытный технический писатель. Ваша задача - написать детальный, "
-                "информативный и хорошо структурированный раздел статьи на основе "
-                "предоставленного плана и исследовательских данных. "
-                "Используйте Markdown для форматирования. Включите примеры, "
-                "сравнения и технические детали, где это уместно. "
-                "Текст должен быть понятным, но глубоким по содержанию.",
+                """
+                Вы — {role}
+                Ваша задача - написать раздел статьи на тему и подтему предоставленную пользователем.
+                Объясните понятно, последовательно, с примерами и пояснениями.
+                Используйте подготовленные исследовательские данные.
+                Цель — сделать сложную тему понятной и практичной.
+                Используйте Markdown, структурируйте информацию.
+                """,
             ),
             (
                 "user",
@@ -189,6 +238,7 @@ async def writing_phase(state: ContentGenerationState):
     topic = state["topic"]
     plans = state["plans"]
     research_results = state["research_results"]
+    role = state["writer_role"]
     final_sections = []
     llm.temperature = 0.3
 
@@ -200,6 +250,7 @@ async def writing_phase(state: ContentGenerationState):
                 topic=topic,
                 title=plan["section_title"],
                 plan=plan["plan"],
+                role=role,
                 research_data=research_data,
             ),
         )
@@ -216,6 +267,7 @@ tool_node = ToolNode(tools=[wikipedia_tool, search_engine])
 graph_builder.add_node("tools", tool_node)
 graph_builder.add_node("research_phase", research_phase)
 graph_builder.add_node("planning_phase", planning_phase)
+graph_builder.add_node("role_selector_phase", role_selector_phase)
 graph_builder.add_node("writing_phase", writing_phase)
 graph_builder.add_node("vector_store_node", vector_store_node)
 
@@ -223,7 +275,8 @@ graph_builder.add_edge("tools", "research_phase")
 graph_builder.add_edge(START, "research_phase")
 graph_builder.add_edge("research_phase", "vector_store_node")
 graph_builder.add_edge("vector_store_node", "planning_phase")
-graph_builder.add_edge("planning_phase", "writing_phase")
+graph_builder.add_edge("planning_phase", "role_selector_phase")
+graph_builder.add_edge("role_selector_phase", "writing_phase")
 graph_builder.add_edge("writing_phase", END)
 
 graph_builder.add_conditional_edges("research_phase", tools_condition)
@@ -238,21 +291,22 @@ if __name__ == "__main__":
     async def main() -> None:
 
         sections = [
+            # Section.model_validate(
+            #     {
+            #         "section_title": "Сортировка слиянием",
+            #         "content": "Описание алгоритма, шаги работы и реализация на Python.",
+            #     }
+            # )
             Section.model_validate(
                 {
-                    "section_title": "История создания",
-                    "content": "Исторические справки по созданию языка.",
+                    "section_title": "История Германии в Средневековье",
+                    "content": "Развитие городов в Средние века",
                 }
-            ),
-            Section.model_validate(
-                {
-                    "section_title": "Текущие изменения в языке",
-                    "content": "Развитие языка на сегодняшний день. ",
-                }
-            ),
+            )
         ]
         state = {
-            "topic": "Python",
+            "topic": "Исстория Германии.",
+            "wishes": "Развитие городов и городской жизни в истории Германии",
             "sections": sections,
             "messages": [],
         }
