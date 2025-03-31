@@ -45,3 +45,44 @@
     Тема статьи: {topic}
     Прошлые подтемы: {sections}
     Пожелания пользователя: {wishes}
+
+
+```mermaid
+%%{init: {'loglevel': 'debug', 'theme': 'forest}}%%
+graph LR
+    subgraph topic_structure
+        direction TB
+        id1[__start__] --> id2["fa:fa-twitter generate_outline"
+                                ---
+                                по запросу и пожеланиям
+                                составляется список
+                                подтем с описанием]
+        id2 --> id3[display_sections
+                    ----
+                    секции выводятся на
+                    экран и делается запрос
+                    пользователю
+                    о дополнениях]
+        id3 --> id4[process_user_feedback
+                    ----
+                    возращается ответ
+                    от пользователя]
+        id4 --> id5[finalize_outline
+                    ----
+                    окончательный]
+        id5 --> id6[__end__]
+    end
+    subgraph content_generator
+        direction TB
+        id7[tools] --> id8[research_phase]
+        id8 --> id7
+        id8 --> id9[vector_store_node]
+        id9 --> id10
+
+    end
+    subgraph article_assembler
+        direction TB
+    end
+    topic_structure --> content_generator
+    content_generator --> article_assembler
+```
