@@ -21,9 +21,9 @@ load_dotenv()
 
 
 llm = ChatOpenAI(
-    api_key=SecretStr(os.getenv("openai_key", "")), model="gpt-4o-mini", max_completion_tokens=8192
+    api_key=SecretStr(os.getenv("openai_key", "")), model="gpt-4o-mini", max_completion_tokens=16350
 )
 
 think_llm = ChatOpenAI(
-    api_key=SecretStr(os.getenv("openai_key", "")), model="gpt-4o-mini", max_completion_tokens=8192
+    api_key=SecretStr(os.getenv("openai_key", "")), model="gpt-4o-mini", max_completion_tokens=16350
 )
