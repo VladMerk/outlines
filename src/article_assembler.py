@@ -44,6 +44,7 @@ async def assemble_article(state: ArticleState):
     ))
 
     # Форматируем финальную статью с заголовком
-    article = f"# {topic}\n" + "\n".join(str(section) for section in sections)
+    # article = f"# {topic}\n" + "\n".join(str(section) for section in sections)
+    article = f"# {topic}\n\n{result.content}"
 
     return {**state, "article": article}
