@@ -71,6 +71,7 @@ async def research_phase(state: ContentGenerationState):
         research_results.append(
             {
                 "section_title": section.section_title,
+                "description": section.content,
                 "research_data": tool_messages[-1].content if tool_messages else "",
             }
         )
@@ -109,13 +110,21 @@ async def vector_store_node(state: ContentGenerationState):
             enhanced_data += f"\n\n### Связанная информация:\n\n{additional_content}"
 
         enhanced_results.append(
-            {"section_title": research["section_title"], "research_data": enhanced_data}
+            {
+                "section_title": research["section_title"],
+                "description": research["description"],
+                "research_data": enhanced_data,
+            }
         )
 
     return {**state, "research_results": enhanced_results}
 
 
 async def planning_phase(state: ContentGenerationState):
+    # sections_text: str = "\n\n".join(
+    #     f"{section["section_title"]}\n{section["description"]}"
+    #     for section in state["research_results"]
+    # )
     planning_prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -123,14 +132,25 @@ async def planning_phase(state: ContentGenerationState):
                 "Вы - технический редактор, структурирующий информацию для статьи. "
                 "На основе собранных исследовательских данных создайте детальный план "
                 "для написания подраздела. Выделите ключевые моменты, определите "
-                "логическую последовательность изложения и укажите, какие примеры "
-                "или иллюстрации следует включить.",
+                "логическую последовательность изложения. Учитывайте приложенное описание "
+                "для подтемы. Нужно только ответить на поставленный вопрос, поэтому составьте план,"
+                "который будет содержать только ответ на поставленный вопрос. "
+                "Не нужно добавлять введение и заключение, здесь нужен только ответ"
+                "на тему подтемы.",
+                # "Вы - технический редактор, структурирующий информацию для статьи, "
+                # "на основе собранных исследовательских данных."
+                # "Создайте детальный план для подсекции основной статьи."
+                # "Необходимо согласовать план подсекции с общим планом, чтобы не было повторов информации."
+                # "Выделите ключевые моменты, определите логическую последовательность изложения."
+                # "Учитывайте приложенное описание для подтемы. Нужно ответить только на тему подтемы."
+                # "Не нужно добвлять введение и заключение, здесь нужен только ответ.",
             ),
             (
                 "user",
                 """
             Тема статьи: {topic}
             Подтема: {title}
+            Описание подтемы: {description}
             Собранные данные: {research_data}
 
             Создайте структурированный план для написания этой подтемы.
@@ -147,7 +167,9 @@ async def planning_phase(state: ContentGenerationState):
         result = await llm.ainvoke(
             planning_prompt.format(
                 topic=topic,
+                # main_plan=sections_text,
                 title=research["section_title"],
+                description=research["description"],
                 research_data=research["research_data"],
             ),
         )
@@ -199,10 +221,7 @@ async def role_selector_phase(state: ContentGenerationState):
         """
     )
 
-    result = await llm.ainvoke(prompt.format(
-        topic=topic,
-        wishes=wishes
-    ))
+    result = await llm.ainvoke(prompt.format(topic=topic, wishes=wishes))
 
     return {**state, "writer_role": result.content}
 
@@ -215,6 +234,8 @@ async def writing_phase(state: ContentGenerationState):
                 """
                 Вы — {role}
                 Ваша задача - написать раздел статьи на тему и подтему предоставленную пользователем.
+                Редактором был добавлен план создания подсекции, за которую вы отвечате.
+                Четко следуйте этому плану. Учитывайте описание для подтемы.
                 Объясните понятно, последовательно, с примерами и пояснениями.
                 Используйте подготовленные исследовательские данные.
                 Цель — сделать сложную тему понятной и практичной.
@@ -226,6 +247,7 @@ async def writing_phase(state: ContentGenerationState):
                 """
                     Тема статьи: {topic}
                     Подтема: {title}
+                    Описание: {description}
                     План раздела: {plan}
                     Исследовательские данные: {research_data}
 
@@ -249,6 +271,7 @@ async def writing_phase(state: ContentGenerationState):
             writing_prompt.format(
                 topic=topic,
                 title=plan["section_title"],
+                description=research_results[i]["description"],
                 plan=plan["plan"],
                 role=role,
                 research_data=research_data,
@@ -301,8 +324,14 @@ if __name__ == "__main__":
                 {
                     "section_title": "История Германии в Средневековье",
                     "content": "Развитие городов в Средние века",
+                },
+            ),
+            Section.model_validate(
+                {
+                    "section_title": "Реформация в Германии",
+                    "content": "Влияние Мартина Лютера на предпосылки к Реформации в Германии.",
                 }
-            )
+            ),
         ]
         state = {
             "topic": "Исстория Германии.",
