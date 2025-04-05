@@ -200,7 +200,6 @@ if __name__ == "__main__":
             input={"topic": topic, "wishes": wishes}, config=config  # type: ignore
         )
 
-        # pprint(result, indent=2, width=200)
         os.system("clear")
         print(result)
 
