@@ -2,23 +2,13 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.messages import AIMessage, ToolMessage
-from langgraph.graph import END, START, StateGraph, add_messages
+from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
-from typing_extensions import Annotated, TypedDict
 
 from llms import llm
-from models import Section, SectionsList
+from models import Section
+from states import ContentGenerationState
 from tools import search_engine, wikipedia_tool
-
-
-class ContentGenerationState(TypedDict):
-    topic: str
-    wishes: str
-    sections: SectionsList
-    messages: Annotated[list, add_messages]
-    research_results: list[dict[str, str]]
-    plans: list[dict[str, str]]
-    writer_role: str
 
 
 async def research_phase(state: ContentGenerationState):

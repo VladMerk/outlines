@@ -5,18 +5,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langchain_core.runnables import chain as as_runnable
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph, add_messages
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
-from typing_extensions import Annotated, TypedDict
 
 from llms import think_llm
 from models import SectionsList
-
-
-class OutlineState(TypedDict):
-    topic: str
-    wishes: Annotated[list[str], add_messages]
-    sections: SectionsList
+from states import OutlineState
 
 
 async def generate_outline(state: OutlineState):
@@ -162,13 +156,15 @@ def get_graph():
 
 
 @as_runnable
-async def content_generator(state: OutlineState):
+async def sections_generator(state: OutlineState):
     config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
 
     graph = get_graph()
 
     async for chunk in graph.astream(
-        {"topic": state["topic"], "wishes": state["wishes"]}, config, stream_mode="updates"
+        {"topic": state["topic"], "wishes": state["wishes"]},
+        config,
+        stream_mode="updates",
     ):
         if "__interrupt__" in chunk:
             while True:
@@ -195,7 +191,7 @@ if __name__ == "__main__":
             None, input, "> Пожелания: "
         )
 
-        result = await content_generator.ainvoke(
+        result = await sections_generator.ainvoke(
             input={"topic": topic, "wishes": wishes}, config=config  # type: ignore
         )
 
