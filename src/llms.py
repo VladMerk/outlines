@@ -9,7 +9,7 @@ load_dotenv()
 # llm = ChatOpenAI(
 #     base_url="http://localhost:11434/v1",
 #     api_key=SecretStr("ollama"),
-#     model="qwen2.5:32b",
+#     model="mistral-nemo",
 #     temperature=0,
 # )
 

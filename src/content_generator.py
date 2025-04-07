@@ -242,7 +242,7 @@ async def writing_phase(state: ContentGenerationState):
                     - и т.д.
 
                 Цель: сделать сложную тему понятной и практичной.
-                """
+                """,
             ),
             (
                 "user",
@@ -275,14 +275,14 @@ async def writing_phase(state: ContentGenerationState):
                 topic=topic,
                 title=plan["section_title"],
                 description=research_results[i]["description"],
-                context=final_sections[i-1] if i > 0 else "",
+                context=final_sections[i - 1] if i > 0 else "",
                 plan=plan["plan"],
                 role=role,
                 research_data=research_data,
             ),
         )
 
-        final_sections.append(result.content)
+        final_sections.append(result.content)  # type: ignore
 
     return {**state, "sections": final_sections}
 

@@ -168,18 +168,17 @@ async def content_generator(state: OutlineState):
     graph = get_graph()
 
     async for chunk in graph.astream(
-        {"topic": state["topic"], "wishes": state["wishes"]}, config
+        {"topic": state["topic"], "wishes": state["wishes"]}, config, stream_mode="updates"
     ):
-        for node_id, _ in chunk.items():
-            if node_id == "__interrupt__":
-                while True:
-                    user_feedback = await asyncio.get_event_loop().run_in_executor(
-                        None, input, ">>> Дополните свои пожелания: "
-                    )
-                    await graph.ainvoke(Command(resume=user_feedback), config)
+        if "__interrupt__" in chunk:
+            while True:
+                user_feedback = await asyncio.get_event_loop().run_in_executor(
+                    None, input, ">>> Дополните свои пожелания: "
+                )
+                await graph.ainvoke(Command(resume=user_feedback), config)
 
-                    if user_feedback.lower() == "done":
-                        break
+                if user_feedback.lower() == "done":
+                    break
 
     return graph.get_state(config).values["sections"]
 
