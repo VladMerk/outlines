@@ -5,18 +5,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langchain_core.runnables import chain as as_runnable
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph, add_messages
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
-from typing_extensions import Annotated, TypedDict
 
 from llms import think_llm
 from models import SectionsList
-
-
-class OutlineState(TypedDict):
-    topic: str
-    wishes: Annotated[list[str], add_messages]
-    sections: SectionsList
+from states import OutlineState
 
 
 async def generate_outline(state: OutlineState):
@@ -74,8 +68,8 @@ async def generate_outline(state: OutlineState):
                 🔹 Добавьте те подтемы, предложеныные в пожеланиях пользователя.
                 🔹 НЕ дублируйте подтемы, если они уже есть.
                 🔹 Структурируйте их так, чтобы они плавно раскрывали тему.
-                🔹 Напишите название подтемы и очень подробное описание того, что будет в этой подтеме. Важно написать подробно
-                и понятно - по этому описанию будет написана уже подробная статья, касающаяся этой подтемы.
+                🔹 Напишите название подтемы и очень подробное описание того, что будет в этой подтеме.
+                Это должны быть четкие указания для редактора-исполнителя, который будет писать эту часть статьи.
                 🔹 Для каждой подтемы предоставьте детальное описание содержания и рекомендации по написанию подтемы
                 (не менее 2-3 предложений) - по этому описанию и рекомендациям будет написана собственно статья другим редактором.
                 🔹 Используйте технически точную терминологию.
@@ -162,24 +156,25 @@ def get_graph():
 
 
 @as_runnable
-async def content_generator(state: OutlineState):
+async def sections_generator(state: OutlineState):
     config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
 
     graph = get_graph()
 
     async for chunk in graph.astream(
-        {"topic": state["topic"], "wishes": state["wishes"]}, config
+        {"topic": state["topic"], "wishes": state["wishes"]},
+        config,
+        stream_mode="updates",
     ):
-        for node_id, _ in chunk.items():
-            if node_id == "__interrupt__":
-                while True:
-                    user_feedback = await asyncio.get_event_loop().run_in_executor(
-                        None, input, ">>> Дополните свои пожелания: "
-                    )
-                    await graph.ainvoke(Command(resume=user_feedback), config)
+        if "__interrupt__" in chunk:
+            while True:
+                user_feedback = await asyncio.get_event_loop().run_in_executor(
+                    None, input, ">>> Дополните свои пожелания: "
+                )
+                await graph.ainvoke(Command(resume=user_feedback), config)
 
-                    if user_feedback.lower() == "done":
-                        break
+                if user_feedback.lower() == "done":
+                    break
 
     return graph.get_state(config).values["sections"]
 
@@ -196,11 +191,10 @@ if __name__ == "__main__":
             None, input, "> Пожелания: "
         )
 
-        result = await content_generator.ainvoke(
+        result = await sections_generator.ainvoke(
             input={"topic": topic, "wishes": wishes}, config=config  # type: ignore
         )
 
-        # pprint(result, indent=2, width=200)
         os.system("clear")
         print(result)
 

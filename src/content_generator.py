@@ -2,23 +2,13 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.messages import AIMessage, ToolMessage
-from langgraph.graph import END, START, StateGraph, add_messages
+from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
-from typing_extensions import Annotated, TypedDict
 
 from llms import llm
-from models import Section, SectionsList
+from models import Section
+from states import ContentGenerationState
 from tools import search_engine, wikipedia_tool
-
-
-class ContentGenerationState(TypedDict):
-    topic: str
-    wishes: str
-    sections: SectionsList
-    messages: Annotated[list, add_messages]
-    research_results: list[dict[str, str]]
-    plans: list[dict[str, str]]
-    writer_role: str
 
 
 async def research_phase(state: ContentGenerationState):
@@ -121,10 +111,6 @@ async def vector_store_node(state: ContentGenerationState):
 
 
 async def planning_phase(state: ContentGenerationState):
-    # sections_text: str = "\n\n".join(
-    #     f"{section["section_title"]}\n{section["description"]}"
-    #     for section in state["research_results"]
-    # )
     planning_prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -137,13 +123,6 @@ async def planning_phase(state: ContentGenerationState):
                 "который будет содержать только ответ на поставленный вопрос. "
                 "Не нужно добавлять введение и заключение, здесь нужен только ответ"
                 "на тему подтемы.",
-                # "Вы - технический редактор, структурирующий информацию для статьи, "
-                # "на основе собранных исследовательских данных."
-                # "Создайте детальный план для подсекции основной статьи."
-                # "Необходимо согласовать план подсекции с общим планом, чтобы не было повторов информации."
-                # "Выделите ключевые моменты, определите логическую последовательность изложения."
-                # "Учитывайте приложенное описание для подтемы. Нужно ответить только на тему подтемы."
-                # "Не нужно добвлять введение и заключение, здесь нужен только ответ.",
             ),
             (
                 "user",
@@ -232,14 +211,27 @@ async def writing_phase(state: ContentGenerationState):
             (
                 "system",
                 """
-                Вы — {role}
-                Ваша задача - написать раздел статьи на тему и подтему предоставленную пользователем.
-                Редактором был добавлен план создания подсекции, за которую вы отвечате.
-                Четко следуйте этому плану. Учитывайте описание для подтемы.
-                Объясните понятно, последовательно, с примерами и пояснениями.
-                Используйте подготовленные исследовательские данные.
-                Цель — сделать сложную тему понятной и практичной.
-                Используйте Markdown, структурируйте информацию.
+                Вы - {role}.
+                Ваша задача - написать раздел статьи, посвященную теме и подразделу предоставленную пользователем.
+                Редактором был составлен план для написания статьи, поэтому четко следуйте инструкциям:
+                - Четко следуйте этому плану, учитывайте описание для подтем. Они согласованы с пользователем.
+                - Объясните понятно, последовательно, с примерами и пояснениями.
+                - Учитывайте предыдущий контекст, если он добавлен, чтобы избежать повторов
+                    и сделать плавные переходы между темами.
+                - Используйте подготовленные исследовательские данные.
+                - Используйте Markdown для форматирования текста
+                - Испльзуйте Mermaid для Markdown для построения схем
+                - Не нужно добавлять "Введение" и "Заключение" к подсекции - нужны только ответы на описываемые темы
+                для секций статьи.
+                - Обязательно нужно добавить секцию с рекомендациями для чтения/просмотру с различными полезными рессурсами,
+                которые могут помочь расширить знания по указанной теме секции:
+                    - книги
+                    - сслылки на рессурсы в интернете
+                    - документация
+                    - качественные запросы в поисковые системы по теме
+                    - и т.д.
+
+                Цель: сделать сложную тему понятной и практичной.
                 """,
             ),
             (
@@ -248,6 +240,7 @@ async def writing_phase(state: ContentGenerationState):
                     Тема статьи: {topic}
                     Подтема: {title}
                     Описание: {description}
+                    Предыдущий контекст: {context}
                     План раздела: {plan}
                     Исследовательские данные: {research_data}
 
@@ -261,7 +254,7 @@ async def writing_phase(state: ContentGenerationState):
     plans = state["plans"]
     research_results = state["research_results"]
     role = state["writer_role"]
-    final_sections = []
+    final_sections: list[str] = []
     llm.temperature = 0.3
 
     for i, plan in enumerate(plans):
@@ -272,13 +265,14 @@ async def writing_phase(state: ContentGenerationState):
                 topic=topic,
                 title=plan["section_title"],
                 description=research_results[i]["description"],
+                context=final_sections[i - 1] if i > 0 else "",
                 plan=plan["plan"],
                 role=role,
                 research_data=research_data,
             ),
         )
 
-        final_sections.append(result.content)
+        final_sections.append(result.content)  # type: ignore
 
     return {**state, "sections": final_sections}
 
@@ -314,12 +308,6 @@ if __name__ == "__main__":
     async def main() -> None:
 
         sections = [
-            # Section.model_validate(
-            #     {
-            #         "section_title": "Сортировка слиянием",
-            #         "content": "Описание алгоритма, шаги работы и реализация на Python.",
-            #     }
-            # )
             Section.model_validate(
                 {
                     "section_title": "История Германии в Средневековье",

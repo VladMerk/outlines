@@ -6,15 +6,15 @@ from langgraph.graph import END, START, StateGraph
 from article_assembler import assemble_article
 from content_generator import graph as outline_generator
 from states import ArticleState
-from topic_structure import content_generator
+from topic_structure import sections_generator
 
 graph_builder = StateGraph(ArticleState)
-graph_builder.add_node("sections_subgraph", content_generator)
+graph_builder.add_node("sections_generator", sections_generator)
 graph_builder.add_node("outline_generator", outline_generator)
 graph_builder.add_node("assemble_article", assemble_article)
 
-graph_builder.add_edge(START, "sections_subgraph")
-graph_builder.add_edge("sections_subgraph", "outline_generator")
+graph_builder.add_edge(START, "sections_generator")
+graph_builder.add_edge("sections_generator", "outline_generator")
 graph_builder.add_edge("outline_generator", "assemble_article")
 
 graph_builder.add_edge("assemble_article", END)
