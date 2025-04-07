@@ -9,7 +9,7 @@ load_dotenv()
 # llm = ChatOpenAI(
 #     base_url="http://localhost:11434/v1",
 #     api_key=SecretStr("ollama"),
-#     model="mistral-nemo",
+#     model="qwen2.5:32b",
 #     temperature=0,
 # )
 
@@ -21,9 +21,12 @@ load_dotenv()
 
 
 llm = ChatOpenAI(
-    api_key=SecretStr(os.getenv("openai_key", "")), model="gpt-4o-mini", max_completion_tokens=16350
+    api_key=SecretStr(os.getenv("openai_key", "")),
+    model="gpt-4o-mini",
+    # max_completion_tokens=16350,
 )
 
 think_llm = ChatOpenAI(
-    api_key=SecretStr(os.getenv("openai_key", "")), model="gpt-4o-mini", max_completion_tokens=16350
+    api_key=SecretStr(os.getenv("openai_key", "")),
+    model="o3-mini",  # max_completion_tokens=16350
 )
