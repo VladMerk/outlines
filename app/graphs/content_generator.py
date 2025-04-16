@@ -5,10 +5,10 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
 
-from llms import llm
-from models import Section, SubSection
-from states import ContentGenerationState
-from tools import search_engine, wikipedia_tool
+from app.graphs.llms import llm
+from app.graphs.models import Section
+from app.graphs.states import ContentGenerationState
+from app.graphs.tools import search_engine, wikipedia_tool
 
 
 async def research_phase(state: ContentGenerationState):

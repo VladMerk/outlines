@@ -1,7 +1,7 @@
 from langgraph.graph import add_messages
 from typing_extensions import Annotated, TypedDict
 
-from models import SectionsList
+from app.graphs.models import SectionsList
 
 
 class ArticleState(TypedDict):

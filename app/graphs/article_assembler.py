@@ -1,4 +1,4 @@
-from states import ArticleState
+from app.graphs.states import ArticleState
 
 
 async def assemble_article(state: ArticleState):
