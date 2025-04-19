@@ -6,7 +6,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
 
 from llms import llm
-from models import Section
+from models import Section, SubSection
 from states import ContentGenerationState
 from tools import search_engine, wikipedia_tool
 
@@ -226,11 +226,12 @@ async def writing_phase(state: ContentGenerationState):
                 - Обязательно нужно добавить секцию с рекомендациями для чтения/просмотру с различными полезными рессурсами,
                 которые могут помочь расширить знания только по указанному разделу статьи. Если к разделу нет хороших рекомендаций
                 тогда оставить рекомендации пустыми.
-                    - книги
+                    - книги: автор, название, дополнительная информация о книги для упрощения поиска:
+                    isbn номер, ссылка в интернет-магазине и т.д.
                     - сслылки на рессурсы в интернете
                     - документация
                     - качественные запросы в поисковые системы по теме
-                    - и т.д.
+                    - и другое, что посчитаете нужным.
 
                 Цель: сделать сложную тему понятной и практичной.
                 """,
@@ -258,22 +259,24 @@ async def writing_phase(state: ContentGenerationState):
     final_sections: list[str] = []
     llm.temperature = 0.3
 
+    writing_llm = writing_prompt | llm.with_structured_output(SubSection)
+
     for i, plan in enumerate(plans):
         research_data = research_results[i]["research_data"]
 
-        result = await llm.ainvoke(
-            writing_prompt.format(
-                topic=topic,
-                title=plan["section_title"],
-                description=research_results[i]["description"],
-                context=final_sections[i - 1] if i > 0 else "",
-                plan=plan["plan"],
-                role=role,
-                research_data=research_data,
-            ),
-        )
+        result = SubSection.model_validate(await writing_llm.ainvoke(
+            {
+                "topic": topic,
+                "title": plan["section_title"],
+                "description": research_results[i]["description"],
+                "context": final_sections[i - 1] if i > 0 else "",
+                "plan": plan["plan"],
+                "role": role,
+                "research_data": research_data,
+            }
+        ))
 
-        final_sections.append(result.content)  # type: ignore
+        final_sections.append(str(result))
 
     return {**state, "sections": final_sections}
 
