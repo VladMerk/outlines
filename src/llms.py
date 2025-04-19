@@ -28,5 +28,5 @@ llm = ChatOpenAI(
 
 think_llm = ChatOpenAI(
     api_key=SecretStr(os.getenv("openai_key", "")),
-    model="o3-mini",  # max_completion_tokens=16350
+    model="o4-mini",  # max_completion_tokens=16350
 )
