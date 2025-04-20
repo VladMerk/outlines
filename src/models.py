@@ -56,14 +56,21 @@ class RecommendationBlock(BaseModel):
         description="Какие то другие рессурсы, которые не относятся к уже описанным, но так же могут быть полезными.",
     )
 
-    def __str__(self):
-        return (
-            "#### Книги:\n\t" + "\n\t".join(str(book) for book in self.books) + "\n\n"
-            "#### Ссылки:\n\t" + "\n\t".join(self.links) + "\n\n"
-            "#### Документация:\n\t" + "\n\t".join(self.documentation) + "\n\n"
-            "#### Поисковые запросы:\n\t" + "\n\t".join(self.search_queries) + "\n\n"
-            "#### Другое:\n\t" + "\n\t".join(self.other)
-        )
+    def __str__(self) -> str:
+
+        recomendations: str = ""
+        if self.books:
+            recomendations += "#### Книги:\n\t" + "\n\t".join(str(book) for book in self.books) + "\n\n"
+        if self.links:
+            recomendations += "#### Ссылки:\n- " + "\n- ".join(self.links) + "\n\n"
+        if self.documentation:
+            recomendations += "#### Документация:\n\t" + "\n\t".join(self.documentation) + "\n\n"
+        if self.search_queries:
+            recomendations += "#### Поисковые запросы:\n- " + "\n- ".join(self.search_queries) + "\n\n"
+        if self.other:
+            recomendations += "#### Другое:\n\t" + "\n\t".join(self.other)
+
+        return recomendations
 
 
 class SubSection(BaseModel):
@@ -71,9 +78,12 @@ class SubSection(BaseModel):
 
     subsection_title: str = Field(description="Заголовок подсекции статьи")
     subsection_content: str = Field(description="Текст подсекции статьи")
-    remmendations: RecommendationBlock = Field(
+    recomendations: RecommendationBlock = Field(
         description="Рекомендации к текущей подсекции статьи"
     )
 
     def __str__(self):
-        return f"## {self.subsection_title}\n\n{self.subsection_content}\n\n\n### Рекомендации:\n{self.remmendations}"
+        if self.recomendations:
+            return f"## {self.subsection_title}\n\n{self.subsection_content}\n\n\n### Рекомендации:\n{self.recomendations}"
+        else:
+            return f"## {self.subsection_title}\n\n{self.subsection_content}"
