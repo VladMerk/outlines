@@ -24,12 +24,56 @@ class SectionsList(BaseModel):
         return "\n".join([str(section) for section in self.sections])
 
 
+class RecomendatedBook(BaseModel):
+    author: str = Field(description="Автор книги")
+    name: str = Field(description="Название книги")
+    isbn: str = Field(description="Номер ISBN")
+
+    def __str__(self):
+        return f"{self.author} - {self.name}({self.isbn})"
+
+
+class RecommendationBlock(BaseModel):
+    books: list[RecomendatedBook] = Field(default_factory=list, description="Рекомендуемые книги.")
+    links: list[str] = Field(
+        default_factory=list, description="Ссылки на рессурсы или статьи в интернете."
+    )
+    documentation: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Ссылки на страницы документации. "
+            "[ВАЖНО!] Нужны только тех случаев, где действительно может быть какая то документация! "
+            "К примеру - программирование. "
+            "Во всех остальных случаях оставлять пустым."
+        ),
+    )
+    search_queries: list[str] = Field(
+        default_factory=list,
+        description="Запросы к поисковым системам, которые могут помочь в расширенном объяснении вопроса.",
+    )
+    other: list[str] = Field(
+        default_factory=list,
+        description="Какие то другие рессурсы, которые не относятся к уже описанным, но так же могут быть полезными.",
+    )
+
+    def __str__(self):
+        return (
+            "#### Книги:\n\t" + "\n\t".join(str(book) for book in self.books) + "\n\n"
+            "#### Ссылки:\n\t" + "\n\t".join(self.links) + "\n\n"
+            "#### Документация:\n\t" + "\n\t".join(self.documentation) + "\n\n"
+            "#### Поисковые запросы:\n\t" + "\n\t".join(self.search_queries) + "\n\n"
+            "#### Другое:\n\t" + "\n\t".join(self.other)
+        )
+
+
 class SubSection(BaseModel):
     """Класс текста подсекции статьи"""
 
     subsection_title: str = Field(description="Заголовок подсекции статьи")
     subsection_content: str = Field(description="Текст подсекции статьи")
-    remmendations: str = Field(description="Рекомендации к текущей подсекции статьи")
+    remmendations: RecommendationBlock = Field(
+        description="Рекомендации к текущей подсекции статьи"
+    )
 
     def __str__(self):
-        return f"## {self.subsection_title}\n\n{self.subsection_content}\n\n\n###Рекомендации:\n{self.remmendations}"
+        return f"## {self.subsection_title}\n\n{self.subsection_content}\n\n\n### Рекомендации:\n{self.remmendations}"
