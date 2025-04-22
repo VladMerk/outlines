@@ -6,7 +6,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
 
 from app.graphs.llms import llm
-from app.graphs.models import Section
+from app.graphs.models import Section, SubSection
 from app.graphs.states import ContentGenerationState
 from app.graphs.tools import search_engine, wikipedia_tool
 
@@ -268,17 +268,19 @@ async def writing_phase(state: ContentGenerationState):
 
         context = "\n".join([str(item) for item in final_sections]) if i > 0 else ""
 
-        result = SubSection.model_validate(await writing_llm.ainvoke(
-            {
-                "topic": topic,
-                "title": plan["section_title"],
-                "description": research_results[i]["description"],
-                "context": context,
-                "plan": plan["plan"],
-                "role": role,
-                "research_data": research_data,
-            }
-        ))
+        result = SubSection.model_validate(
+            await writing_llm.ainvoke(
+                {
+                    "topic": topic,
+                    "title": plan["section_title"],
+                    "description": research_results[i]["description"],
+                    "context": context,
+                    "plan": plan["plan"],
+                    "role": role,
+                    "research_data": research_data,
+                }
+            )
+        )
 
         final_sections.append(str(result))
 

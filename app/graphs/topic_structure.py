@@ -8,8 +8,8 @@ from langchain_core.runnables import chain as as_runnable
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
-from llms import think_llm
 
+from app.graphs.llms import think_llm
 from app.graphs.models import SectionsList
 from app.graphs.states import OutlineState
 
