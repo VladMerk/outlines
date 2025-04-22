@@ -1,4 +1,5 @@
 import asyncio
+import os
 import uuid
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -34,7 +35,7 @@ async def generate_outline(state: OutlineState):
                 """
                 Вы - экспертный технический редактор. Ваша задача — **создать список тем и подтем** для статьи.
 
-                Этап 1: определене типа запроса
+                Этап 1: определение типа запроса
                 По заданному пользователем вопросу и его пожеланиям (если они есть), определите его тип по
                 следующим критериям:
                  - Исследовательская статья: широкая тема, требующего всестороннего освещения, введения в предметную
@@ -97,6 +98,7 @@ async def display_sections(state: OutlineState):
 
     sections = SectionsList.model_validate(state["sections"]).sections
 
+    os.system("clear")
     print("\nТекущий список подтем:")
     for i, section in enumerate(sections, start=1):
         print(f"[{i}] {section.section_title.capitalize()}:\n\t{section.content}")
@@ -180,7 +182,6 @@ async def sections_generator(state: OutlineState):
 
 
 if __name__ == "__main__":
-    import os
 
     async def main():
         config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})

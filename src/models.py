@@ -34,7 +34,9 @@ class RecomendatedBook(BaseModel):
 
 
 class RecommendationBlock(BaseModel):
-    books: list[RecomendatedBook] = Field(default_factory=list, description="Рекомендуемые книги.")
+    books: list[RecomendatedBook] = Field(
+        default_factory=list, description="Рекомендуемые книги."
+    )
     links: list[str] = Field(
         default_factory=list, description="Ссылки на рессурсы или статьи в интернете."
     )
@@ -60,17 +62,39 @@ class RecommendationBlock(BaseModel):
 
         recomendations: str = ""
         if self.books:
-            recomendations += "#### Книги:\n\t" + "\n\t".join(str(book) for book in self.books) + "\n\n"
+            recomendations += (
+                "#### Книги:\n\t"
+                + "\n\t".join(str(book) for book in self.books)
+                + "\n\n"
+            )
         if self.links:
             recomendations += "#### Ссылки:\n- " + "\n- ".join(self.links) + "\n\n"
         if self.documentation:
-            recomendations += "#### Документация:\n\t" + "\n\t".join(self.documentation) + "\n\n"
+            recomendations += (
+                "#### Документация:\n\t" + "\n\t".join(self.documentation) + "\n\n"
+            )
         if self.search_queries:
-            recomendations += "#### Поисковые запросы:\n- " + "\n- ".join(self.search_queries) + "\n\n"
+            recomendations += (
+                "#### Поисковые запросы:\n- "
+                + "\n- ".join(self.search_queries)
+                + "\n\n"
+            )
         if self.other:
             recomendations += "#### Другое:\n\t" + "\n\t".join(self.other)
 
         return recomendations
+
+    def is_empty(self):
+        return all(
+            len(item) <= 0
+            for item in [
+                self.books,
+                self.links,
+                self.documentation,
+                self.search_queries,
+                self.other,
+            ]
+        )
 
 
 class SubSection(BaseModel):
@@ -83,7 +107,7 @@ class SubSection(BaseModel):
     )
 
     def __str__(self):
-        if self.recomendations:
-            return f"## {self.subsection_title}\n\n{self.subsection_content}\n\n\n### Рекомендации:\n{self.recomendations}"
+        if not self.recomendations.is_empty():
+            return f"## {self.subsection_title}\n\n{self.subsection_content}\n\n### Рекомендации:\n{self.recomendations}"
         else:
             return f"## {self.subsection_title}\n\n{self.subsection_content}"
