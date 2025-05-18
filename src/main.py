@@ -1,6 +1,7 @@
 import asyncio
 import os
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
 from article_assembler import assemble_article
@@ -22,7 +23,7 @@ graph_builder.add_edge("assemble_article", END)
 graph = graph_builder.compile()
 
 
-async def main():
+async def main() -> None:
     os.makedirs("outputs", exist_ok=True)
     topic = await asyncio.get_event_loop().run_in_executor(
         None, input, ">>> Тема для статьи: "
@@ -31,7 +32,9 @@ async def main():
         None, input, ">>> Пожелания к статье: "
     )
 
-    result = await graph.ainvoke({"topic": topic, "wishes": wishes})
+    config = RunnableConfig(recursion_limit=100)
+
+    result = await graph.ainvoke({"topic": topic, "wishes": wishes}, config=config)
 
     with open(f"outputs/{topic}.md", "w") as file:
         file.write(result["article"])
