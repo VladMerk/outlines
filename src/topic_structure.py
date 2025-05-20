@@ -18,7 +18,7 @@ async def generate_outline(state: OutlineState):
 
     topic = state["topic"]
     wishes = (
-        "\n".join([str(item) for item in state["wishes"]])
+        "\n".join([str(item.content) for item in state["wishes"]])  # type: ignore
         if isinstance(state["wishes"], list) and "wishes" in state
         else "no additional wishes"
     )
@@ -77,8 +77,10 @@ async def generate_outline(state: OutlineState):
 
 
                 **Тема статьи:** {topic}
-                **Прошлые подтемы:** {sections}
-                **Пожелания пользователя:** {wishes}
+                **Прошлые подтемы:**
+                {sections}
+                **Пожелания пользователя:**
+                {wishes}
                 """,
             ),
             ("user", "Обновите список подтем согласно указанным пожеланиям."),
