@@ -1,3 +1,4 @@
+import tiktoken
 from langchain.prompts import ChatPromptTemplate
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -35,9 +36,7 @@ async def research_phase(state: ContentGenerationState):
         ]
     )
 
-    research_agent = create_react_agent(
-        model=llm, tools=[wikipedia_tool, search_engine]
-    )
+    research_agent = create_react_agent(model=llm, tools=[wikipedia_tool])
     research_chain = research_prompt | research_agent
 
     topic = state["topic"]
@@ -55,9 +54,7 @@ async def research_phase(state: ContentGenerationState):
         )
 
         # Извлекаем только ответы модели
-        tool_messages = [
-            msg for msg in result["messages"] if isinstance(msg, ToolMessage)
-        ]
+        tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
         research_results.append(
             {
                 "section_title": section.section_title,
@@ -65,9 +62,7 @@ async def research_phase(state: ContentGenerationState):
                 "research_data": tool_messages[-1].content if tool_messages else "",
             }
         )
-        results.extend(
-            message for message in result["messages"] if isinstance(message, AIMessage)
-        )
+        results.extend(message for message in result["messages"] if isinstance(message, AIMessage))
 
     return {**state, "research_results": research_results, "messages": results}
 
@@ -82,9 +77,7 @@ async def vector_store_node(state: ContentGenerationState):
         if research["research_data"]:  # Проверка на пустые данные
             vectorstore.add_texts(
                 texts=[research["research_data"]],
-                metadatas=[
-                    {"section": research["section_title"], "topic": state["topic"]}
-                ],
+                metadatas=[{"section": research["section_title"], "topic": state["topic"]}],
             )
 
     # Поиск релевантной информации для каждой секции
@@ -153,9 +146,7 @@ async def planning_phase(state: ContentGenerationState):
             ),
         )
 
-        plans.append(
-            {"section_title": research["section_title"], "plan": result.content}
-        )
+        plans.append({"section_title": research["section_title"], "plan": result.content})
 
     return {
         **state,
@@ -265,20 +256,32 @@ async def writing_phase(state: ContentGenerationState):
 
     for i, plan in enumerate(plans):
         research_data = research_results[i]["research_data"]
+        encoding = tiktoken.encoding_for_model("gpt-4o-mini")
 
-        context = "\n".join([str(item) for item in final_sections]) if i > 0 else ""
+        if i == 0:
+            context = ""
+        else:
+            N = min(5, len(final_sections))
+            context = "\n".join([str(item) for item in final_sections[-N:]])
+            while len(encoding.encode(context)) > 2000 and N > 1:
+                N -= 1
+                context = "\n".join([str(item) for item in final_sections[-N:]])
 
-        result = SubSection.model_validate(await writing_llm.ainvoke(
-            {
-                "topic": topic,
-                "title": plan["section_title"],
-                "description": research_results[i]["description"],
-                "context": context,
-                "plan": plan["plan"],
-                "role": role,
-                "research_data": research_data,
-            }
-        ))
+        # context = "\n".join([str(item) for item in final_sections[-1:]]) if i > 0 else ""
+
+        result = SubSection.model_validate(
+            await writing_llm.ainvoke(
+                {
+                    "topic": topic,
+                    "title": plan["section_title"],
+                    "description": research_results[i]["description"],
+                    "context": context,
+                    "plan": plan["plan"],
+                    "role": role,
+                    "research_data": research_data,
+                }
+            )
+        )
 
         final_sections.append(str(result))
 
@@ -314,7 +317,6 @@ if __name__ == "__main__":
     import asyncio
 
     async def main() -> None:
-
         sections = [
             Section.model_validate(
                 {

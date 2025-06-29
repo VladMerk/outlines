@@ -15,16 +15,12 @@ from llms import llm
 warnings.catch_warnings()
 warnings.simplefilter("ignore")
 
-rate_limiter = InMemoryRateLimiter(
-    requests_per_second=0.1, check_every_n_seconds=0.1, max_bucket_size=1
-)
+rate_limiter = InMemoryRateLimiter(requests_per_second=0.1, check_every_n_seconds=0.1, max_bucket_size=1)
 
 
 async def scrape_pages(title: str, url: str) -> str:
-
     # Create an async HTTP client
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-
         # Fetch each URL and convert to markdown
         try:
             # Fetch the content
@@ -75,7 +71,7 @@ async def search_engine(query: str):
         ### Content
         {text}
 
-        И вернуть получившийся текст
+        И вернуть обощенный результат в одном-двух предложениях.
         """
     )
 
@@ -106,7 +102,10 @@ if __name__ == "__main__":
     import asyncio
 
     async def main():
-        results = await search_engine.ainvoke("Жизнь города в Средневековой Германии")
-        print(results)
+        results_ddg = await search_engine.ainvoke("Жизнь города в Средневековой Германии")
+        print(results_ddg)
+
+        results_wiki = await wikipedia_tool.ainvoke("Столица Германии")
+        print(results_wiki)
 
     asyncio.run(main())
