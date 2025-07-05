@@ -9,7 +9,7 @@ from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
 from llms import llm
 from models import Section, SubSection
 from states import ContentGenerationState
-from tools import search_engine, wikipedia_tool
+from tavily_tools import search_engine, code_search_engine, wikipedia_tool
 
 
 async def research_phase(state: ContentGenerationState):
@@ -36,7 +36,7 @@ async def research_phase(state: ContentGenerationState):
         ]
     )
 
-    research_agent = create_react_agent(model=llm, tools=[wikipedia_tool])
+    research_agent = create_react_agent(model=llm, tools=[search_engine, code_search_engine, wikipedia_tool])
     research_chain = research_prompt | research_agent
 
     topic = state["topic"]
@@ -70,7 +70,7 @@ async def research_phase(state: ContentGenerationState):
 async def vector_store_node(state: ContentGenerationState):
     # Инициализация векторного хранилища с локальной моделью эмбеддингов
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectorstore = Chroma(embedding_function=embeddings)
+    vectorstore = Chroma(embedding_function=embeddings, client_settings={"anonymized_telemetry": False})
 
     # Индексация собранных данных
     for research in state["research_results"]:
@@ -84,7 +84,7 @@ async def vector_store_node(state: ContentGenerationState):
     enhanced_results = []
     for research in state["research_results"]:
         query = f"{state['topic']} {research['section_title']}"
-        similar_docs = vectorstore.similarity_search(query, k=3)
+        similar_docs = vectorstore.similarity_search(query, k=min(3, vectorstore._collection.count()))
 
         # Объединение найденной информации с исходными данными
         enhanced_data = research["research_data"]
@@ -290,7 +290,7 @@ async def writing_phase(state: ContentGenerationState):
 
 graph_builder = StateGraph(ContentGenerationState)
 
-tool_node = ToolNode(tools=[wikipedia_tool, search_engine])
+tool_node = ToolNode(tools=[wikipedia_tool, search_engine, code_search_engine])
 
 graph_builder.add_node("tools", tool_node)
 graph_builder.add_node("research_phase", research_phase)
