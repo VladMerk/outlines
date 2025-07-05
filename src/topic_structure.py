@@ -15,18 +15,13 @@ from states import OutlineState
 
 
 async def generate_outline(state: OutlineState):
-
     topic = state["topic"]
     wishes = (
         "\n".join([str(item.content) for item in state["wishes"]])  # type: ignore
         if isinstance(state["wishes"], list) and "wishes" in state
         else "no additional wishes"
     )
-    prev_sections = (
-        "\n".join([str(section) for section in state["sections"]])
-        if "sections" in state
-        else "no sections"
-    )
+    prev_sections = "\n".join([str(section) for section in state["sections"]]) if "sections" in state else "no sections"
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -81,15 +76,12 @@ async def generate_outline(state: OutlineState):
 
     generate_outline_chain = prompt | think_llm.with_structured_output(SectionsList)
 
-    sections = await generate_outline_chain.ainvoke(
-        {"topic": topic, "sections": prev_sections, "wishes": wishes}
-    )
+    sections = await generate_outline_chain.ainvoke({"topic": topic, "sections": prev_sections, "wishes": wishes})
 
     return {"sections": sections, "wishes": state["wishes"]}
 
 
 async def display_sections(state: OutlineState):
-
     sections = SectionsList.model_validate(state["sections"]).sections
 
     os.system("clear")
@@ -101,7 +93,6 @@ async def display_sections(state: OutlineState):
 
 
 async def process_user_feedback(state: OutlineState):
-
     user_feedback: str = interrupt(
         {
             "wishes": state["wishes"],
@@ -112,11 +103,7 @@ async def process_user_feedback(state: OutlineState):
     if user_feedback.lower() == "done":
         return Command(update={"wishes": state["wishes"]}, goto=END)
 
-    new_wishes = (
-        state["wishes"] + [user_feedback]
-        if user_feedback not in state["wishes"]
-        else state["wishes"]
-    )
+    new_wishes = state["wishes"] + [user_feedback] if user_feedback not in state["wishes"] else state["wishes"]
 
     return Command(
         update={"wishes": new_wishes},
@@ -164,9 +151,7 @@ async def sections_generator(state: OutlineState):
     ):
         if "__interrupt__" in chunk:
             while True:
-                user_feedback = await asyncio.get_event_loop().run_in_executor(
-                    None, input, ">>> Дополните свои пожелания: "
-                )
+                user_feedback = await asyncio.get_event_loop().run_in_executor(None, input, ">>> Дополните свои пожелания: ")
                 await graph.ainvoke(Command(resume=user_feedback), config)
 
                 if user_feedback.lower() == "done":
@@ -194,7 +179,8 @@ if __name__ == "__main__":
         )
 
         result = await sections_generator.ainvoke(
-            input={"topic": topic, "wishes": wishes}, config=config  # type: ignore
+            input={"topic": topic, "wishes": wishes},
+            config=config,  # type: ignore
         )
 
         os.system("clear")
