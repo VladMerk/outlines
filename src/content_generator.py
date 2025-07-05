@@ -12,65 +12,162 @@ from states import ContentGenerationState
 from tavily_tools import search_engine, code_search_engine, wikipedia_tool
 
 
-async def research_phase(state: ContentGenerationState):
-    research_prompt = ChatPromptTemplate.from_messages(
+async def _plan_research(topic: str, section: Section, encoding) -> str:
+    """Этап планирования - что именно нужно искать"""
+
+    planning_prompt = ChatPromptTemplate.from_template("""
+Определите, что именно нужно исследовать для секции:
+
+**Тема:** {topic}
+**Секция:** {title}
+**Описание:** {description}
+
+Кратко ответьте (максимум 100 слов):
+1. Тип информации: теоретическая/практическая/техническая
+2. Нужны ли примеры кода: да/нет, какие именно
+3. Ключевые термины для поиска: [список]
+4. Источники: Wikipedia/поиск/код
+
+Пример ответа:
+"Техническая информация. Нужны примеры кода: Builder struct, методы build(). Термины: Rust builder pattern, ownership, type state. Источники: код + поиск."
+""")
+
+    result = await llm.ainvoke(planning_prompt.format(topic=topic, title=section.section_title, description=section.content))
+
+    return result.content
+
+
+async def _conduct_targeted_search(topic: str, section: Section, plan: str, encoding) -> str:
+    """Этап поиска с ограничением токенов"""
+
+    search_prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                "Вы - исследователь, собирающий информацию по заданной теме. "
-                "Используйте доступные инструменты для поиска информации. "
-                "Соберите максимально полные данные, включая определения, ключевые концепции, "
-                "примеры, сравнения и актуальные сведения. "
-                "Структурируйте найденную информацию в виде списка фактов и ключевых моментов.",
+                """
+            Вы - исследователь. Найдите КОНКРЕТНУЮ информацию согласно плану.
+            
+            Инструменты:
+            - wikipedia_tool: базовые концепции
+            - search_engine: актуальная информация  
+            - code_search_engine: примеры кода, документация
+            
+            ВАЖНО: Делайте не более 2-3 поисковых запросов!
+            Ищите только самое важное согласно плану.
+            """,
             ),
             (
                 "user",
                 """
-            Тема статьи: {topic}
-            Подтема для исследования: {title}
-            Описание подтемы: {description}
-
-            Соберите всю необходимую информацию по этой подтеме.
+            План исследования: {plan}
+            Секция: {title}
+            
+            Найдите ключевую информацию согласно плану.
             """,
             ),
         ]
     )
 
-    research_agent = create_react_agent(model=llm, tools=[search_engine, code_search_engine, wikipedia_tool])
-    research_chain = research_prompt | research_agent
+    # Ограничиваем количество итераций для контроля бюджета и токенов
+    search_agent = create_react_agent(
+        model=llm,
+        tools=[wikipedia_tool, search_engine, code_search_engine],
+        # max_iterations=2,  # Максимум 2 итерации
+    )
+
+    search_chain = search_prompt | search_agent
+
+    result = await search_chain.ainvoke({"plan": plan, "title": section.section_title})
+
+    # Извлекаем и объединяем результаты поиска
+    tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
+    combined_results = "\n\n".join([msg.content for msg in tool_messages])
+
+    # КОНТРОЛЬ ТОКЕНОВ: обрезаем если слишком длинно
+    max_tokens = 3000  # Лимит для исследовательских данных
+    if len(encoding.encode(combined_results)) > max_tokens:
+        # Обрезаем по токенам, а не по символам
+        tokens = encoding.encode(combined_results)
+        truncated_tokens = tokens[:max_tokens]
+        combined_results = encoding.decode(truncated_tokens)
+        combined_results += "\n\n[ДАННЫЕ ОБРЕЗАНЫ ДЛЯ ОПТИМИЗАЦИИ]"
+
+    return combined_results
+
+
+async def _synthesize_information(section: Section, search_results: str, encoding) -> str:
+    """Этап синтеза - структурирование и сжатие информации"""
+
+    if not search_results.strip():
+        return f"Исследование для секции '{section.section_title}' не дало результатов."
+
+    synthesis_prompt = ChatPromptTemplate.from_template("""
+Кратко структурируйте найденную информацию (максимум 500 слов):
+
+**Секция:** {title}
+**Найденная информация:** {search_results}
+
+Выделите ТОЛЬКО самое важное:
+• Ключевые понятия: [определения]
+• Примеры: [конкретные примеры кода или случаи]
+• Практические советы: [рекомендации]
+• Подводные камни: [частые ошибки]
+
+Фокус на практической ценности для написания статьи!
+""")
+
+    synthesis_result = await llm.ainvoke(synthesis_prompt.format(title=section.section_title, search_results=search_results))
+
+    synthesized = synthesis_result.content
+
+    # Дополнительная проверка размера
+    max_final_tokens = 1500  # Финальный лимит для каждой секции
+    if len(encoding.encode(synthesized)) > max_final_tokens:
+        tokens = encoding.encode(synthesized)
+        truncated_tokens = tokens[:max_final_tokens]
+        synthesized = encoding.decode(truncated_tokens)
+        synthesized += "\n\n[ИНФОРМАЦИЯ СЖАТА]"
+
+    return synthesized
+
+
+async def research_phase(state):
+    """Улучшенная фаза исследования с контролем токенов"""
 
     topic = state["topic"]
     sections = [Section.model_validate(section) for section in state["sections"]]
     research_results = []
-    results: list[AIMessage] = []
+
+    # Инициализация токенайзера для контроля размера
+    encoding = tiktoken.encoding_for_model("gpt-4o-mini")
 
     for section in sections:
-        result = await research_chain.ainvoke(
-            {
-                "topic": topic,
-                "title": section.section_title,
-                "description": section.content,
-            }
-        )
+        print(f"Исследуем секцию: {section.section_title}")
 
-        # Извлекаем только ответы модели
-        tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
+        # ЭТАП 1: Планирование исследования
+        planning_result = await _plan_research(topic, section, encoding)
+
+        # ЭТАП 2: Целенаправленный поиск
+        search_results = await _conduct_targeted_search(topic, section, planning_result, encoding)
+
+        # ЭТАП 3: Синтез и сжатие информации
+        final_research = await _synthesize_information(section, search_results, encoding)
+
         research_results.append(
             {
                 "section_title": section.section_title,
                 "description": section.content,
-                "research_data": tool_messages[-1].content if tool_messages else "",
+                "research_data": final_research,
             }
         )
-        results.extend(message for message in result["messages"] if isinstance(message, AIMessage))
 
-    return {**state, "research_results": research_results, "messages": results}
+    return {**state, "research_results": research_results}
 
 
 async def vector_store_node(state: ContentGenerationState):
     # Инициализация векторного хранилища с локальной моделью эмбеддингов
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectorstore = Chroma(embedding_function=embeddings, client_settings={"anonymized_telemetry": False})
+    vectorstore = Chroma(embedding_function=embeddings)
 
     # Индексация собранных данных
     for research in state["research_results"]:
@@ -299,7 +396,7 @@ graph_builder.add_node("role_selector_phase", role_selector_phase)
 graph_builder.add_node("writing_phase", writing_phase)
 graph_builder.add_node("vector_store_node", vector_store_node)
 
-graph_builder.add_edge("tools", "research_phase")
+# graph_builder.add_edge("tools", "research_phase")
 graph_builder.add_edge(START, "research_phase")
 graph_builder.add_edge("research_phase", "vector_store_node")
 graph_builder.add_edge("vector_store_node", "planning_phase")
@@ -307,8 +404,8 @@ graph_builder.add_edge("planning_phase", "role_selector_phase")
 graph_builder.add_edge("role_selector_phase", "writing_phase")
 graph_builder.add_edge("writing_phase", END)
 
-graph_builder.add_conditional_edges("research_phase", tools_condition)
-graph_builder.add_edge("tools", "research_phase")
+# graph_builder.add_conditional_edges("research_phase", tools_condition)
+# graph_builder.add_edge("tools", "research_phase")
 
 graph = graph_builder.compile()
 
