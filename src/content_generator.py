@@ -2,9 +2,9 @@ import tiktoken
 from langchain.prompts import ChatPromptTemplate
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode, create_react_agent
+from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
 
 from llms import llm
 from models import Section, SubSection
@@ -690,7 +690,7 @@ tool_node = ToolNode(tools=[wikipedia_tool, search_engine, code_search_engine])
 
 graph_builder.add_node("tools", tool_node)
 graph_builder.add_node("research_phase", research_phase)
-graph_builder.add_node("practical_planning_phase", practical_planning_phase)
+graph_builder.add_node("planning_phase", planning_phase)
 graph_builder.add_node("role_selector_phase", role_selector_phase)
 graph_builder.add_node("writing_phase", writing_phase)
 graph_builder.add_node("vector_store_node", vector_store_node)
@@ -698,11 +698,13 @@ graph_builder.add_node("vector_store_node", vector_store_node)
 # graph_builder.add_edge("tools", "research_phase")
 graph_builder.add_edge(START, "research_phase")
 graph_builder.add_edge("research_phase", "vector_store_node")
-graph_builder.add_edge("vector_store_node", "practical_planning_phase")
+graph_builder.add_edge("vector_store_node", "planning_phase")
 graph_builder.add_edge("planning_phase", "role_selector_phase")
 graph_builder.add_edge("role_selector_phase", "writing_phase")
 graph_builder.add_edge("writing_phase", END)
 
+# graph_builder.add_conditional_edges("research_phase", tools_condition)
+# graph_builder.add_edge("tools", "research_phase")
 
 graph = graph_builder.compile()
 

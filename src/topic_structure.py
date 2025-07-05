@@ -176,7 +176,7 @@ def get_improved_graph():
 
 
 @as_runnable
-async def improved_sections_generator(state: OutlineState):
+async def sections_generator(state: OutlineState):
     """Улучшенный генератор секций"""
 
     config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
