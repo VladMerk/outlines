@@ -14,89 +14,118 @@ from models import SectionsList
 from states import OutlineState
 
 
-async def generate_outline(state: OutlineState):
+async def thinking_phase(state: OutlineState):
+    """Этап размышления о структуре статьи"""
+
     topic = state["topic"]
     wishes = (
-        "\n".join([str(item.content) for item in state["wishes"]])  # type: ignore
+        "\n".join([str(item.content) for item in state["wishes"]])
         if isinstance(state["wishes"], list) and "wishes" in state
-        else "no additional wishes"
+        else state.get("wishes", "no additional wishes")
+    )
+
+    thinking_prompt = ChatPromptTemplate.from_template("""
+Проанализируйте тему статьи пошагово:
+
+Тема: {topic}
+Пожелания: {wishes}
+
+Размышления:
+1. Какой тип статьи? (техническая/теоретическая/практическая)
+2. Какой уровень сложности? (начальный/средний/продвинутый)
+3. Какие ключевые концепции нужно объяснить?
+4. Какая логическая последовательность? (от чего к чему)
+5. Какие практические примеры понадобятся?
+6. Есть ли сравнительные аспекты с другими подходами?
+7. Какие "подводные камни" нужно осветить?
+
+Напишите краткий план подхода к структурированию (3-5 предложений):
+""")
+
+    thinking_result = await think_llm.ainvoke(thinking_prompt.format(topic=topic, wishes=wishes))
+
+    return {**state, "thinking_result": thinking_result.content}
+
+
+async def generate_outline_improved(state: OutlineState):
+    """Создание структуры на основе размышлений"""
+
+    topic = state["topic"]
+    wishes = (
+        "\n".join([str(item.content) for item in state["wishes"]])
+        if isinstance(state["wishes"], list) and "wishes" in state
+        else state.get("wishes", "no additional wishes")
     )
     prev_sections = "\n".join([str(section) for section in state["sections"]]) if "sections" in state else "no sections"
+    thinking_result = state.get("thinking_result", "")
 
-    prompt = ChatPromptTemplate.from_messages(
+    structure_prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
                 """
-                Вы — экспертный автор и редактор.
-                Ваша задача последовательно обдумать вопрос, предоставленный пользователем и ответить
-                в виде списка тем, которые помогут пользователю изучать материал.
-
-                Проанализируйте тему статьи и сформулируйте, какие крупные разделы необходимо включить в статью,
-                чтобы она была полной, логичной и полезной. Думайте шаг за шагом:
-
-                - Какого вида статья? (техническая, историческая или др.)
-                - Какие ключевые аспекты охватывает эта тема?
-                - Какие термины и понятия необходимо объяснить?
-                - Что важно описать сначала, чтобы создать базу для остального?
-                - Какие практические/технические моменты нужно раскрыть?
-                - Какие частые ошибки или недосказанности встречаются по этой теме?
-                - Нужно ли дополнить объяснение примерами, сравнениями, диаграммами?
-                - Какую логическую структуру должны иметь будущие разделы?
-                - Современное состояние вопроса: что сейчас считается стандартом, что недавно изменилось,
-                какие есть новые подходы, рекомендации и прочее.
-                - Есть ли разногласия старой трактовки и современного состояния в теме?
-
-                Общие требования:
-                - Удалите подтемы, которые пользователь считает ненужными.
-                - Добавьте те подтемы, предложеныные в пожеланиях пользователя.
-                - НЕ дублируйте подтемы, если они уже есть.
-                - Структурируйте их так, чтобы они плавно раскрывали тему - от просто к сложному и от начального к продвинутому.
-                - Напишите название подтемы и очень подробное описание того, что будет в этой подтеме.
-                Это должны быть четкие указания для редактора-исполнителя, который будет писать эту часть статьи.
-                - Для каждой подтемы предоставьте детальное описание содержания и рекомендации по написанию подтемы
-                (не менее 2-3 предложений) - по этому описанию и рекомендациям будет написана собственно статья другим редактором.
-                - Используйте технически точную терминологию.
-                - Техническая статья должна иметь более "узкий" формат - не нужно "введния" и "заключения",
-                  нужно более точно и полно раскрыть тему.
-                """,
+            Вы — экспертный технический редактор.
+            
+            На основе проведенного анализа создайте структуру статьи.
+            
+            Требования:
+            - От простого к сложному
+            - Каждая секция = один конкретный аспект темы
+            - Детальное описание содержания (2-3 предложения)
+            - Без "введения" и "заключения"
+            - Технически точная терминология
+            - Практические примеры в каждой секции
+            """,
             ),
             (
                 "user",
                 """
-                    **Тема статьи:** {topic}
-                    **Прошлые подтемы:**
-                    {sections}
-                    **Пожелания пользователя:**
-                    {wishes}
-                """,
+            **Анализ темы:**
+            {thinking_result}
+            
+            **Тема статьи:** {topic}
+            **Пожелания:** {wishes}
+            **Предыдущие секции:** {prev_sections}
+            
+            Создайте структуру статьи, следуя анализу.
+            """,
             ),
         ]
     )
 
-    generate_outline_chain = prompt | think_llm.with_structured_output(SectionsList)
+    generate_outline_chain = structure_prompt | think_llm.with_structured_output(SectionsList)
 
-    sections = await generate_outline_chain.ainvoke({"topic": topic, "sections": prev_sections, "wishes": wishes})
+    sections = await generate_outline_chain.ainvoke(
+        {"thinking_result": thinking_result, "topic": topic, "wishes": wishes, "prev_sections": prev_sections}
+    )
 
-    return {"sections": sections, "wishes": state["wishes"]}
+    return {**state, "sections": sections}
 
 
 async def display_sections(state: OutlineState):
+    """Отображение секций пользователю"""
+
     sections = SectionsList.model_validate(state["sections"]).sections
 
     os.system("clear")
-    print("\nТекущий список подтем:")
+    print("\n=== АНАЛИЗ ТЕМЫ ===")
+    print(state.get("thinking_result", ""))
+
+    print("\n=== СТРУКТУРА СТАТЬИ ===")
     for i, section in enumerate(sections, start=1):
-        print(f"[{i}] {section.section_title.capitalize()}:\n\t{section.content}")
+        print(f"\n[{i}] {section.section_title}")
+        print(f"    {section.content}")
 
     return state
 
 
 async def process_user_feedback(state: OutlineState):
+    """Обработка обратной связи пользователя"""
+
     user_feedback: str = interrupt(
         {
             "wishes": state["wishes"],
-            "messages": "Скорректируйте полученные подтемы или напишите 'done': ",
+            "messages": "\n>>> Скорректируйте структуру или напишите 'done': ",
         }
     )
 
@@ -107,42 +136,51 @@ async def process_user_feedback(state: OutlineState):
 
     return Command(
         update={"wishes": new_wishes},
-        goto="generate_outline",
+        goto="thinking_phase",  # Начинаем с размышлений заново
     )
 
 
 async def finalize_outline(state: OutlineState):
-    print("\nFinal node and finished values:")
+    """Финализация структуры"""
+
+    print("\n=== ФИНАЛЬНАЯ СТРУКТУРА ===")
     for i, section in enumerate(state["sections"].sections, start=1):
-        print(f"[{i}] {section.section_title}\n\t{section.content}")
+        print(f"\n[{i}] {section.section_title}")
+        print(f"    {section.content}")
 
     return Command(goto=END)
 
 
-def get_graph():
+def get_improved_graph():
+    """Создание улучшенного графа"""
+
     graph_builder = StateGraph(OutlineState)
 
-    graph_builder.add_node("generate_outline", generate_outline)
+    # Добавляем этап размышления
+    graph_builder.add_node("thinking_phase", thinking_phase)
+    graph_builder.add_node("generate_outline_improved", generate_outline_improved)
     graph_builder.add_node("display_sections", display_sections)
     graph_builder.add_node("process_user_feedback", process_user_feedback)
     graph_builder.add_node("finalize_outline", finalize_outline)
 
-    graph_builder.add_edge(START, "generate_outline")
-    graph_builder.add_edge("generate_outline", "display_sections")
+    # Новый граф: thinking -> generate -> display -> feedback
+    graph_builder.add_edge(START, "thinking_phase")
+    graph_builder.add_edge("thinking_phase", "generate_outline_improved")
+    graph_builder.add_edge("generate_outline_improved", "display_sections")
     graph_builder.add_edge("display_sections", "process_user_feedback")
 
     graph_builder.set_finish_point("finalize_outline")
 
     checkpointer = MemorySaver()
-
     return graph_builder.compile(checkpointer=checkpointer)
 
 
 @as_runnable
-async def sections_generator(state: OutlineState):
-    config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
+async def improved_sections_generator(state: OutlineState):
+    """Улучшенный генератор секций"""
 
-    graph = get_graph()
+    config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
+    graph = get_improved_graph()
 
     async for chunk in graph.astream(
         {"topic": state["topic"], "wishes": state["wishes"]},
@@ -160,30 +198,16 @@ async def sections_generator(state: OutlineState):
     return graph.get_state(config).values["sections"]
 
 
+# Тестирование
 if __name__ == "__main__":
 
     async def main():
-        config = RunnableConfig(configurable={"thread_id": uuid.uuid4()})
-        # topic = await asyncio.get_event_loop().run_in_executor(
-        #     None, input, "> Тема статьи: "
-        # )
-        # wishes = await asyncio.get_event_loop().run_in_executor(
-        #     None, input, "> Пожелания: "
-        # )
-        # topic = "Как работает FastAPI: архитектура, практические примеры и продвинутые приёмы"
-        # wishes = "Интересует асинхронность, работа с БД и подготовка к деплою."
-        topic = "Гармонозаместительная терапия (ГЗТ) тестостероном"
-        wishes = (
-            "Хотел бы разобраться чем полезна подобная терапия на пациентов старше 40 лет, "
-            "занимающихся любительским спортом и ведущих здоровый образ жизни. Какие показания для начала проведения ГЗТ"
-        )
+        topic = "Реализация паттерна Builder в Rust"
+        wishes = "Хочу понять как правильно реализовать Builder pattern в Rust, особенно интересует работа с типами и lifetime параметрами. Также хотелось бы увидеть сравнение с тем, как это делается в других языках вроде Python"
 
-        result = await sections_generator.ainvoke(
-            input={"topic": topic, "wishes": wishes},
-            config=config,  # type: ignore
-        )
+        result = await improved_sections_generator.ainvoke({"topic": topic, "wishes": wishes})
 
-        os.system("clear")
+        print("\n=== РЕЗУЛЬТАТ ===")
         print(result)
 
     asyncio.run(main())

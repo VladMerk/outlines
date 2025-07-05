@@ -15,6 +15,7 @@ class OutlineState(TypedDict):
     topic: str
     wishes: Annotated[list[str], add_messages]
     sections: SectionsList
+    thinking_result: str
 
 
 class ContentGenerationState(TypedDict):
