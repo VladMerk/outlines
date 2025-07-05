@@ -2,166 +2,188 @@ import tiktoken
 from langchain.prompts import ChatPromptTemplate
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
+from langgraph.prebuilt import ToolNode, create_react_agent
 
 from llms import llm
 from models import Section, SubSection
 from states import ContentGenerationState
-from tavily_tools import search_engine, code_search_engine, wikipedia_tool
+from tools import tools
+
+# ========== ОПТИМИЗИРОВАННЫЙ RESEARCH PHASE ==========
 
 
-async def _plan_research(topic: str, section: Section, encoding) -> str:
-    """Этап планирования - что именно нужно искать"""
+async def research_phase(state):
+    """Оптимизированная фаза исследования - меньше запросов, больше эффективности"""
 
-    planning_prompt = ChatPromptTemplate.from_template("""
-Определите, что именно нужно исследовать для секции:
+    topic = state["topic"]
+    sections = [Section.model_validate(section) for section in state["sections"]]
+    encoding = tiktoken.encoding_for_model("gpt-4o-mini")
+
+    print(f"🔍 Начинаем оптимизированное исследование для {len(sections)} секций...")
+
+    # ЭТАП 1: Глобальный анализ - что вообще нужно искать
+    global_analysis = await _analyze_research_needs(topic, sections)
+
+    # ЭТАП 2: Пакетный поиск - делаем 5-8 запросов вместо 30+
+    batch_results = await _conduct_batch_search(topic, global_analysis, encoding)
+
+    # ЭТАП 3: Распределение результатов по секциям
+    section_results = await _distribute_results(sections, batch_results, encoding)
+
+    print(f"✅ Исследование завершено. Использовано запросов: {batch_results['search_count']}")
+
+    return {**state, "research_results": section_results}
+
+
+async def _analyze_research_needs(topic: str, sections: list[Section]) -> dict:
+    """Анализ всех секций сразу для определения общих потребностей"""
+
+    analysis_prompt = ChatPromptTemplate.from_template("""
+Проанализируйте ВСЕ секции статьи и определите общие потребности в исследовании:
 
 **Тема:** {topic}
-**Секция:** {title}
-**Описание:** {description}
+**Секции:** {sections_info}
 
-Кратко ответьте (максимум 100 слов):
-1. Тип информации: теоретическая/практическая/техническая
-2. Нужны ли примеры кода: да/нет, какие именно
-3. Ключевые термины для поиска: [список]
-4. Источники: Wikipedia/поиск/код
+Определите:
+1. **Общие ключевые термины** для поиска (3-5 терминов)
+2. **Типы информации** (теоретическая/практическая/историческая)
+3. **Нужен ли код** (да/нет + какой именно)
+4. **Специфические запросы** (2-3 уникальных запроса)
 
-Пример ответа:
-"Техническая информация. Нужны примеры кода: Builder struct, методы build(). Термины: Rust builder pattern, ownership, type state. Источники: код + поиск."
+Цель: минимизировать количество поисков, покрыв максимум потребностей.
+
+Формат ответа:
+Ключевые термины: [список]
+Типы информации: [список]
+Нужен код: [да/нет + детали]
+Специфические запросы: [список]
 """)
 
-    result = await llm.ainvoke(planning_prompt.format(topic=topic, title=section.section_title, description=section.content))
+    # Формируем сводку всех секций
+    sections_info = "\n".join([f"- {section.section_title}: {section.content}" for section in sections])
 
-    return result.content
+    result = await llm.ainvoke(analysis_prompt.format(topic=topic, sections_info=sections_info))
+
+    return {"analysis": result.content, "sections_count": len(sections)}
 
 
-async def _conduct_targeted_search(topic: str, section: Section, plan: str, encoding) -> str:
-    """Этап поиска с ограничением токенов"""
+async def _conduct_batch_search(topic: str, global_analysis: dict, encoding) -> dict:
+    """Пакетный поиск - делаем мало запросов, получаем много информации"""
 
-    search_prompt = ChatPromptTemplate.from_messages(
+    # Создаем умного агента для пакетного поиска
+    batch_prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
                 """
-            Вы - исследователь. Найдите КОНКРЕТНУЮ информацию согласно плану.
-            
+            Вы - эксперт-исследователь. Ваша задача - эффективно собрать информацию
+            для ВСЕЙ статьи, делая минимум поисков.
+
+            Стратегия:
+            1. Делайте ШИРОКИЕ поисковые запросы, покрывающие несколько тем
+            2. Используйте разные инструменты стратегически
+            3. Максимум 6-8 поисков на всю статью
+            4. Фокус на качество, а не количество
+
             Инструменты:
-            - wikipedia_tool: базовые концепции
-            - search_engine: актуальная информация  
-            - code_search_engine: примеры кода, документация
-            
-            ВАЖНО: Делайте не более 2-3 поисковых запросов!
-            Ищите только самое важное согласно плану.
+            - wikipedia_tool: для общих концепций
+            - search_engine: для широкого поиска
+            - code_search_engine: только если нужен код
+
+            ВАЖНО: Делайте широкие запросы, покрывающие несколько аспектов темы сразу!
             """,
             ),
             (
                 "user",
                 """
-            План исследования: {plan}
-            Секция: {title}
-            
-            Найдите ключевую информацию согласно плану.
+            Тема статьи: {topic}
+            Анализ потребностей: {analysis}
+
+            Соберите всю необходимую информацию за минимум поисков.
+            Делайте широкие запросы, покрывающие несколько аспектов темы.
             """,
             ),
         ]
     )
 
-    # Ограничиваем количество итераций для контроля бюджета и токенов
-    search_agent = create_react_agent(
-        model=llm,
-        tools=[wikipedia_tool, search_engine, code_search_engine],
-        # max_iterations=2,  # Максимум 2 итерации
-    )
+    # Создаем агента БЕЗ max_iterations (его нет в create_react_agent)
+    batch_agent = create_react_agent(model=llm, tools=tools)
 
-    search_chain = search_prompt | search_agent
+    batch_chain = batch_prompt | batch_agent
 
-    result = await search_chain.ainvoke({"plan": plan, "title": section.section_title})
+    # Ограничиваем через prompt и контроль результата
+    result = await batch_chain.ainvoke({"topic": topic, "analysis": global_analysis["analysis"]})
 
-    # Извлекаем и объединяем результаты поиска
-    tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
-    combined_results = "\n\n".join([msg.content for msg in tool_messages])
+    # Извлекаем все результаты поиска
+    tool_messages: list[ToolMessage] = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
 
-    # КОНТРОЛЬ ТОКЕНОВ: обрезаем если слишком длинно
-    max_tokens = 3000  # Лимит для исследовательских данных
+    combined_results = "\n\n".join(str(msg.content) for msg in tool_messages)
+
+    # Контроль токенов - УМЕНЬШАЕМ лимиты
+    max_tokens = 8000
     if len(encoding.encode(combined_results)) > max_tokens:
-        # Обрезаем по токенам, а не по символам
         tokens = encoding.encode(combined_results)
         truncated_tokens = tokens[:max_tokens]
         combined_results = encoding.decode(truncated_tokens)
-        combined_results += "\n\n[ДАННЫЕ ОБРЕЗАНЫ ДЛЯ ОПТИМИЗАЦИИ]"
+        combined_results += "\n\n[ПАКЕТНЫЕ ДАННЫЕ ОБРЕЗАНЫ ДЛЯ ОПТИМИЗАЦИИ]"
 
-    return combined_results
+    return {
+        "combined_research": combined_results,
+        "search_count": len(tool_messages),  # Количество использованных результатов
+    }
 
 
-async def _synthesize_information(section: Section, search_results: str, encoding) -> str:
-    """Этап синтеза - структурирование и сжатие информации"""
+async def _distribute_results(sections: list[Section], batch_results: dict, encoding) -> list:
+    """Распределение пакетных результатов по секциям"""
 
-    if not search_results.strip():
-        return f"Исследование для секции '{section.section_title}' не дало результатов."
+    distribution_prompt = ChatPromptTemplate.from_template("""
+Распределите найденную информацию по конкретной секции:
 
-    synthesis_prompt = ChatPromptTemplate.from_template("""
-Кратко структурируйте найденную информацию (максимум 500 слов):
+**Секция:** {section_title}
+**Описание:** {section_description}
+**Общие исследовательские данные:** {research_data}
 
-**Секция:** {title}
-**Найденная информация:** {search_results}
+Выберите и структурируйте ТОЛЬКО ту информацию, которая относится к этой секции:
 
-Выделите ТОЛЬКО самое важное:
-• Ключевые понятия: [определения]
-• Примеры: [конкретные примеры кода или случаи]
-• Практические советы: [рекомендации]
-• Подводные камни: [частые ошибки]
+• Ключевые понятия: [для этой секции]
+• Примеры: [конкретные примеры для этой секции]
+• Практические советы: [для этой секции]
+• Подводные камни: [для этой секции]
 
-Фокус на практической ценности для написания статьи!
+Если информации недостаточно, используйте базовые знания и напишите основные моменты по секции.
 """)
 
-    synthesis_result = await llm.ainvoke(synthesis_prompt.format(title=section.section_title, search_results=search_results))
-
-    synthesized = synthesis_result.content
-
-    # Дополнительная проверка размера
-    max_final_tokens = 1500  # Финальный лимит для каждой секции
-    if len(encoding.encode(synthesized)) > max_final_tokens:
-        tokens = encoding.encode(synthesized)
-        truncated_tokens = tokens[:max_final_tokens]
-        synthesized = encoding.decode(truncated_tokens)
-        synthesized += "\n\n[ИНФОРМАЦИЯ СЖАТА]"
-
-    return synthesized
-
-
-async def research_phase(state):
-    """Улучшенная фаза исследования с контролем токенов"""
-
-    topic = state["topic"]
-    sections = [Section.model_validate(section) for section in state["sections"]]
-    research_results = []
-
-    # Инициализация токенайзера для контроля размера
-    encoding = tiktoken.encoding_for_model("gpt-4o-mini")
+    section_results = []
+    research_data = batch_results["combined_research"]
 
     for section in sections:
-        print(f"Исследуем секцию: {section.section_title}")
+        result = await llm.ainvoke(
+            distribution_prompt.format(
+                section_title=section.section_title, section_description=section.content, research_data=research_data
+            )
+        )
 
-        # ЭТАП 1: Планирование исследования
-        planning_result = await _plan_research(topic, section, encoding)
+        # Контроль размера для каждой секции
+        distributed_content = result.content
+        max_section_tokens = 1000  # Меньше лимит для распределенных данных
 
-        # ЭТАП 2: Целенаправленный поиск
-        search_results = await _conduct_targeted_search(topic, section, planning_result, encoding)
+        if len(encoding.encode(distributed_content)) > max_section_tokens:
+            tokens = encoding.encode(distributed_content)
+            truncated_tokens = tokens[:max_section_tokens]
+            distributed_content = encoding.decode(truncated_tokens)
+            distributed_content += "\n\n[ДАННЫЕ СЕКЦИИ СЖАТЫ]"
 
-        # ЭТАП 3: Синтез и сжатие информации
-        final_research = await _synthesize_information(section, search_results, encoding)
-
-        research_results.append(
+        section_results.append(
             {
                 "section_title": section.section_title,
                 "description": section.content,
-                "research_data": final_research,
+                "research_data": distributed_content,
             }
         )
 
-    return {**state, "research_results": research_results}
+    return section_results
 
 
 async def vector_store_node(state: ContentGenerationState):
@@ -250,14 +272,14 @@ async def practical_planning_phase(state):
                 "system",
                 """
             Вы - практик-методист, создающий планы для действенных статей.
-            
+
             ПРИНЦИПЫ:
             - НИкаких академических введений/заключений
             - Прямо к сути: определение → пример → практика
             - Минимум теории, максимум практики
             - Конкретные примеры с кодом/действиями
             - Красная нить через всю статью
-            
+
             ЗАПРЕЩЕНО:
             - "В этом разделе мы изучим..."
             - "Заключение: мы рассмотрели..."
@@ -269,11 +291,11 @@ async def practical_planning_phase(state):
                 "user",
                 """
             **Стратегия статьи:** {article_strategy}
-            
+
             **Секция:** {title}
             **Описание:** {description}
             **Исследовательские данные:** {research_data}
-            
+
             Создайте практический план БЕЗ воды:
 
             **Структура секции:**
@@ -282,24 +304,24 @@ async def practical_planning_phase(state):
             3. **Развитие темы** (усложнение, вариации)
             4. **Практические моменты** (что важно знать)
             5. **Подводные камни** (частые ошибки)
-            
+
             **Требования к содержанию:**
             - Конкретные примеры кода (если применимо)
             - Реальные сценарии использования
             - Практические советы
             - НЕТ абстрактных рассуждений
-            
+
             **Если это часть проекта:**
             - Как эта секция связана с общим проектом
             - Какую часть функциональности реализуем
-            
+
             Будьте конкретны и практичны!
             """,
             ),
         ]
     )
 
-    topic = state["topic"]
+    # topic = state["topic"]
     research_results = state["research_results"]
     plans = []
 
@@ -316,238 +338,6 @@ async def practical_planning_phase(state):
         plans.append({"section_title": research["section_title"], "plan": result.content})
 
     return {**state_with_strategy, "plans": plans}
-
-
-# Специализированные планы для разных типов
-async def create_project_plan(state):
-    """Создание плана для проектных статей. Только заготовка на будущее."""
-
-    project_prompt = ChatPromptTemplate.from_template("""
-Создайте план для проектной секции:
-
-**Проект:** {project_description}
-**Секция:** {title}
-**Этап проекта:** {description}
-
-**План этапа:**
-1. **Цель этапа** - что конкретно реализуем
-2. **Код/действия** - пошаговая реализация
-3. **Объяснение** - почему именно так
-4. **Тестирование** - как проверить работу
-5. **Следующий шаг** - связка с дальнейшими этапами
-
-Фокус на коде и конкретных действиях!
-""")
-
-    # Реализация для проектных статей
-    pass
-
-
-async def planning_phase(state):
-    """Улучшенная фаза планирования с учетом структурированных исследований"""
-
-    planning_prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """
-            Вы - опытный технический редактор и методист.
-            
-            Ваша задача - создать детальный, пошаговый план написания секции статьи,
-            используя структурированные результаты исследования.
-            
-            Учитывайте:
-            - Тип информации (техническая/историческая/практическая)
-            - Целевую аудиторию (начинающие/опытные)
-            - Логическую последовательность (от простого к сложному)
-            - Практическую ценность для читателя
-            
-            Создавайте план, который писатель сможет легко выполнить.
-            """,
-            ),
-            (
-                "user",
-                """
-            **Тема статьи:** {topic}
-            **Секция:** {title}
-            **Описание секции:** {description}
-            
-            **Структурированные исследовательские данные:**
-            {research_data}
-            
-            Создайте детальный план написания этой секции.
-            
-            Формат плана:
-            
-            **1. Введение в тему (1-2 абзаца)**
-            - Что объяснить в первую очередь
-            - Какой контекст дать читателю
-            
-            **2. Основное содержание (3-4 блока)**
-            - Блок 1: [Название] - [что конкретно описать]
-            - Блок 2: [Название] - [что конкретно описать]
-            - и т.д.
-            
-            **3. Практические примеры**
-            - Какие примеры использовать
-            - Где именно их разместить
-            
-            **4. Проблемы и решения**
-            - Какие подводные камни упомянуть
-            - Как их преподнести читателю
-            
-            **5. Заключение секции**
-            - Ключевые выводы
-            - Переход к следующей теме
-            
-            **6. Рекомендации**
-            - Какие ресурсы включить
-            - Приоритет по важности
-            
-            Будьте конкретны и практичны!
-            """,
-            ),
-        ]
-    )
-
-    topic = state["topic"]
-    research_results = state["research_results"]
-    plans = []
-
-    for research in research_results:
-        # Проверяем наличие исследовательских данных
-        if not research.get("research_data"):
-            # Fallback для секций без данных
-            basic_plan = f"""
-            **План для секции без исследовательских данных:**
-            
-            1. Дать базовое определение темы: {research["section_title"]}
-            2. Объяснить основные концепции
-            3. Привести общие примеры
-            4. Указать на необходимость дополнительного изучения
-            """
-            plans.append({"section_title": research["section_title"], "plan": basic_plan})
-            continue
-
-        # Создаем план на основе структурированных данных
-        result = await llm.ainvoke(
-            planning_prompt.format(
-                topic=topic,
-                title=research["section_title"],
-                description=research["description"],
-                research_data=research["research_data"],
-            )
-        )
-
-        plans.append({"section_title": research["section_title"], "plan": result.content})
-
-    return {**state, "plans": plans}
-
-
-# Альтернативная версия с типизацией секций
-async def adaptive_planning_phase(state):
-    """Адаптивное планирование в зависимости от типа секции"""
-
-    # Сначала определяем тип секции
-    type_detection_prompt = ChatPromptTemplate.from_template("""
-    Определите тип секции статьи:
-
-    Секция: {title}
-    Описание: {description}
-    Тема: {topic}
-
-    Выберите один тип:
-    - ТЕХНИЧЕСКАЯ (код, алгоритмы, инструменты)
-    - ИСТОРИЧЕСКАЯ (события, персоналии, временные рамки)
-    - КОНЦЕПТУАЛЬНАЯ (теории, принципы, объяснения)
-    - ПРАКТИЧЕСКАЯ (руководства, инструкции, примеры использования)
-
-    Ответ: [ТИП]
-    """)
-
-    # Специализированные промпты для разных типов
-    technical_prompt = """
-    **ТЕХНИЧЕСКИЙ ПЛАН:**
-    1. Определения и терминология
-    2. Базовый пример кода с объяснением
-    3. Продвинутые техники
-    4. Сравнение подходов
-    5. Практические рекомендации
-    6. Типичные ошибки и их решения
-    """
-
-    historical_prompt = """
-    **ИСТОРИЧЕСКИЙ ПЛАН:**
-    1. Исторический контекст
-    2. Ключевые события и даты
-    3. Важные персоналии
-    4. Причины и следствия
-    5. Влияние на современность
-    6. Спорные вопросы и интерпретации
-    """
-
-    conceptual_prompt = """
-    **КОНЦЕПТУАЛЬНЫЙ ПЛАН:**
-    1. Базовое определение концепции
-    2. Основные принципы
-    3. Примеры и аналогии
-    4. Связь с другими концепциями
-    5. Практическое применение
-    6. Ограничения и критика
-    """
-
-    practical_prompt = """
-    **ПРАКТИЧЕСКИЙ ПЛАН:**
-    1. Постановка задачи
-    2. Пошаговое руководство
-    3. Реальные примеры
-    4. Альтернативные подходы
-    5. Troubleshooting
-    6. Дальнейшие шаги
-    """
-
-    topic = state["topic"]
-    research_results = state["research_results"]
-    plans = []
-
-    templates = {
-        "ТЕХНИЧЕСКАЯ": technical_prompt,
-        "ИСТОРИЧЕСКАЯ": historical_prompt,
-        "КОНЦЕПТУАЛЬНАЯ": conceptual_prompt,
-        "ПРАКТИЧЕСКАЯ": practical_prompt,
-    }
-
-    for research in research_results:
-        # Определяем тип секции
-        type_result = await llm.ainvoke(
-            type_detection_prompt.format(title=research["section_title"], description=research["description"], topic=topic)
-        )
-
-        section_type = type_result.content.strip()
-
-        # Выбираем подходящий шаблон
-        template = templates.get(section_type, templates["КОНЦЕПТУАЛЬНАЯ"])
-
-        # Создаем специализированный план
-        specialized_prompt = ChatPromptTemplate.from_template(
-            template
-            + """
-            
-            **Исходные данные:**
-            Секция: {title}
-            Исследования: {research_data}
-            
-            Адаптируйте план под эту конкретную секцию.
-            """
-        )
-
-        result = await llm.ainvoke(
-            specialized_prompt.format(title=research["section_title"], research_data=research.get("research_data", "Нет данных"))
-        )
-
-        plans.append({"section_title": research["section_title"], "section_type": section_type, "plan": result.content})
-
-    return {**state, "plans": plans}
 
 
 async def role_selector_phase(state: ContentGenerationState):
@@ -610,6 +400,13 @@ async def writing_phase(state: ContentGenerationState):
                 - Испльзуйте Mermaid для Markdown для построения схем
                 - Не нужно добавлять "Введение" и "Заключение" к подсекции - нужны только ответы на описываемые темы
                 для секций статьи.
+
+                ВАЖНО ПРО СТРУКТУРУ ПРОЕКТА:
+                - Если это проектная статья, ОБЯЗАТЕЛЬНО указывайте названия файлов и структуру проекта
+                - Показывайте, в какой файл помещать код: src/main.rs, app/models.py, etc.
+                - Создавайте четкую структуру папок и файлов
+                - Объясняйте, как организовать код в проекте
+
                 - Обязательно нужно добавить секцию с рекомендациями для чтения/просмотра с различными полезными рессурсами,
                 которые могут помочь расширить знания только по указанному разделу статьи. Учитывайте рекомендации из предыдущего
                 контекста, чтобы избежать повторов. Если к разделу нет хороших рекомендаций какого то типа,
@@ -654,16 +451,32 @@ async def writing_phase(state: ContentGenerationState):
         research_data = research_results[i]["research_data"]
         encoding = tiktoken.encoding_for_model("gpt-4o-mini")
 
+        # УЛУЧШЕННЫЙ КОНТРОЛЬ ТОКЕНОВ
+        # 1. Обрезаем research_data если он слишком большой
+        # max_research_tokens = 2000
+        # if len(encoding.encode(research_data)) > max_research_tokens:
+        #     tokens = encoding.encode(research_data)
+        #     truncated_tokens = tokens[:max_research_tokens]
+        #     research_data = encoding.decode(truncated_tokens)
+        #     research_data += "\n\n[ИССЛЕДОВАТЕЛЬСКИЕ ДАННЫЕ ОБРЕЗАНЫ]"
+
+        # 2. Контроль контекста (твой проверенный костыль)
         if i == 0:
             context = ""
         else:
-            N = min(5, len(final_sections))
+            N = min(3, len(final_sections))
             context = "\n".join([str(item) for item in final_sections[-N:]])
-            while len(encoding.encode(context)) > 2000 and N > 1:
+            while len(encoding.encode(context)) > 3000 and N > 1:
                 N -= 1
                 context = "\n".join([str(item) for item in final_sections[-N:]])
 
-        # context = "\n".join([str(item) for item in final_sections[-1:]]) if i > 0 else ""
+        # 3. Проверяем общий размер промпта
+        plan_content = plan["plan"]
+        if len(encoding.encode(plan_content)) > 1000:
+            tokens = encoding.encode(plan_content)
+            truncated_tokens = tokens[:1000]
+            plan_content = encoding.decode(truncated_tokens)
+            plan_content += "\n\n[ПЛАН ОБРЕЗАН]"
 
         result = SubSection.model_validate(
             await writing_llm.ainvoke(
@@ -672,9 +485,9 @@ async def writing_phase(state: ContentGenerationState):
                     "title": plan["section_title"],
                     "description": research_results[i]["description"],
                     "context": context,
-                    "plan": plan["plan"],
+                    "plan": plan_content,  # Используем обрезанный план
                     "role": role,
-                    "research_data": research_data,
+                    "research_data": research_data,  # Используем обрезанные данные
                 }
             )
         )
@@ -686,25 +499,21 @@ async def writing_phase(state: ContentGenerationState):
 
 graph_builder = StateGraph(ContentGenerationState)
 
-tool_node = ToolNode(tools=[wikipedia_tool, search_engine, code_search_engine])
+tool_node = ToolNode(tools=tools)
 
 graph_builder.add_node("tools", tool_node)
 graph_builder.add_node("research_phase", research_phase)
-graph_builder.add_node("planning_phase", planning_phase)
+graph_builder.add_node("practical_planning_phase", practical_planning_phase)  # Используем практическое планирование
 graph_builder.add_node("role_selector_phase", role_selector_phase)
 graph_builder.add_node("writing_phase", writing_phase)
 graph_builder.add_node("vector_store_node", vector_store_node)
 
-# graph_builder.add_edge("tools", "research_phase")
 graph_builder.add_edge(START, "research_phase")
 graph_builder.add_edge("research_phase", "vector_store_node")
-graph_builder.add_edge("vector_store_node", "planning_phase")
-graph_builder.add_edge("planning_phase", "role_selector_phase")
+graph_builder.add_edge("vector_store_node", "practical_planning_phase")
+graph_builder.add_edge("practical_planning_phase", "role_selector_phase")
 graph_builder.add_edge("role_selector_phase", "writing_phase")
 graph_builder.add_edge("writing_phase", END)
-
-# graph_builder.add_conditional_edges("research_phase", tools_condition)
-# graph_builder.add_edge("tools", "research_phase")
 
 graph = graph_builder.compile()
 
@@ -712,76 +521,28 @@ graph = graph_builder.compile()
 if __name__ == "__main__":
     import asyncio
 
-    async def test_planning():
-        # Тестовые данные с результатами research_phase
-        research_results = [
-            {
-                "section_title": "Базовая реализация Builder в Rust",
-                "description": "Простейший Rust-Builder с полями в Option<T>",
-                "research_data": """
-                ### Ключевые понятия:
-                - Builder pattern: пошаговое создание объектов
-                - Option<T>: обработка необязательных полей
-                
-                ### Примеры:
-                - PersonBuilder с методами set_name(), set_age()
-                
-                ### Практические советы:
-                - Используйте Result<T, E> для валидации
-                
-                ### Подводные камни:
-                - Забыть проверить обязательные поля
-                """,
-            }
+    async def test_optimized():
+        from models import Section
+
+        sections = [
+            Section(section_title="Основы ownership", content="Понятие владения в Rust"),
+            Section(section_title="Borrowing", content="Заимствования и ссылки"),
+            Section(section_title="Lifetimes", content="Время жизни переменных"),
         ]
 
-        state = {"topic": "Builder pattern в Rust", "research_results": research_results}
-
-        print("=== БАЗОВОЕ ПЛАНИРОВАНИЕ ===")
-        result1 = await planning_phase(state)
-        print(result1["plans"][0]["plan"])
-
-        print("\n=== АДАПТИВНОЕ ПЛАНИРОВАНИЕ ===")
-        result2 = await adaptive_planning_phase(state)
-        print(f"Тип: {result2['plans'][0]['section_type']}")
-        print(result2["plans"][0]["plan"])
-
-    async def test_practical_planning():
-        # Тест 1: Объяснительная статья
-        state1 = {
-            "topic": "Builder pattern в Rust",
-            "wishes": "Хочу понять как правильно реализовать с типами и lifetime",
-            "research_results": [
-                {
-                    "section_title": "Базовая реализация Builder",
-                    "description": "Простейший Builder с Option<T>",
-                    "research_data": "Ключевые понятия: Builder, Option<T>, методы build()",
-                }
-            ],
+        state = {
+            "topic": "Система владения в Rust",
+            "wishes": "Практические примеры с кодом",
+            "sections": sections,
+            "messages": [],
         }
 
-        # Тест 2: Проектная статья
-        state2 = {
-            "topic": "Создаем HTTP клиент на Rust",
-            "wishes": "Пошаговое создание HTTP клиента с Builder pattern",
-            "research_results": [
-                {
-                    "section_title": "Создание базовой структуры клиента",
-                    "description": "Определяем структуру HttpClient и основные методы",
-                    "research_data": "Нужны: reqwest, tokio, структура клиента",
-                }
-            ],
-        }
+        print("=== ТЕСТ ОПТИМИЗИРОВАННОГО ИССЛЕДОВАНИЯ ===")
+        result = await research_phase(state)
 
-        print("=== ОБЪЯСНИТЕЛЬНАЯ СТАТЬЯ ===")
-        result1 = await practical_planning_phase(state1)
-        print("Стратегия:", result1["article_strategy"])
-        print("\nПлан:", result1["plans"][0]["plan"])
+        print(f"Секций обработано: {len(result['research_results'])}")
+        for research in result["research_results"]:
+            print(f"\nСекция: {research['section_title']}")
+            print(f"Данные: {research['research_data'][:200]}...")
 
-        print("\n" + "=" * 50)
-        print("=== ПРОЕКТНАЯ СТАТЬЯ ===")
-        result2 = await practical_planning_phase(state2)
-        print("Стратегия:", result2["article_strategy"])
-        print("\nПлан:", result2["plans"][0]["plan"])
-
-    asyncio.run(test_planning())
+    asyncio.run(test_optimized())

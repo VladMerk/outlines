@@ -15,7 +15,6 @@ langchain-ollama = "^0.2.3"
 click = "^8.1.8"
 pydantic = "^2.10.6"
 wikipedia = "^1.4.0"
-duckduckgo-search = "^6.3.7"
 wikipedia-api = "^0.8.1"
 sentence-transformers = "^4.0.1"
 chromadb = "^0.6.3"
@@ -24,6 +23,7 @@ accelerate = "^1.6.0"
 httpx = "^0.28.1"
 markdownify = "^1.1.0"
 tavily-python = "^0.7.9"
+duckduckgo-search = "^8.0.5"
 
 
 [tool.poetry.group.dev.dependencies]
