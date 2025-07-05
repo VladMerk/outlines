@@ -26,3 +26,4 @@ class ContentGenerationState(TypedDict):
     research_results: list[dict[str, str]]
     plans: list[dict[str, str]]
     writer_role: str
+    article_strategy: str
