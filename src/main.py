@@ -5,7 +5,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
 from article_assembler import assemble_article
-from content_generator import graph as outline_generator
+from graphs.content_graph import graph as outline_generator
 from states import ArticleState
 from topic_structure import sections_generator
 
@@ -25,12 +25,8 @@ graph = graph_builder.compile()
 
 async def main() -> None:
     os.makedirs("outputs", exist_ok=True)
-    topic = await asyncio.get_event_loop().run_in_executor(
-        None, input, ">>> Тема для статьи: "
-    )
-    wishes = await asyncio.get_event_loop().run_in_executor(
-        None, input, ">>> Пожелания к статье: "
-    )
+    topic = await asyncio.get_event_loop().run_in_executor(None, input, ">>> Тема для статьи: ")
+    wishes = await asyncio.get_event_loop().run_in_executor(None, input, ">>> Пожелания к статье: ")
 
     config = RunnableConfig(recursion_limit=100)
 

@@ -1,4 +1,5 @@
 from langgraph.graph import add_messages
+from langchain_core.messages import AnyMessage
 from typing_extensions import Annotated, TypedDict
 
 from models import SectionsList
@@ -13,7 +14,7 @@ class ArticleState(TypedDict):
 
 class OutlineState(TypedDict):
     topic: str
-    wishes: Annotated[list[str], add_messages]
+    wishes: Annotated[list[AnyMessage], add_messages]
     sections: SectionsList
     thinking_result: str
 

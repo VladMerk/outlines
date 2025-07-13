@@ -1,5 +1,5 @@
-import warnings
 import os
+import warnings
 
 import httpx
 from dotenv import load_dotenv

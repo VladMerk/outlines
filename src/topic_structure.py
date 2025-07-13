@@ -205,7 +205,7 @@ if __name__ == "__main__":
         topic = "Реализация паттерна Builder в Rust"
         wishes = "Хочу понять как правильно реализовать Builder pattern в Rust, особенно интересует работа с типами и lifetime параметрами. Также хотелось бы увидеть сравнение с тем, как это делается в других языках вроде Python"
 
-        result = await improved_sections_generator.ainvoke({"topic": topic, "wishes": wishes})
+        result = await sections_generator.ainvoke(input={"topic": topic, "wishes": wishes})  # type: ignore
 
         print("\n=== РЕЗУЛЬТАТ ===")
         print(result)
