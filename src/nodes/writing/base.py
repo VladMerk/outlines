@@ -88,9 +88,9 @@ async def writing_phase(state: ContentGenerationState):
         if i == 0:
             context = ""
         else:
-            N = min(3, len(final_sections))
+            N = min(2, len(final_sections))
             context = "\n".join([str(item) for item in final_sections[-N:]])
-            while len(encoding.encode(context)) > 3000 and N > 1:
+            while len(encoding.encode(context)) > 2000 and N > 1:
                 N -= 1
                 context = "\n".join([str(item) for item in final_sections[-N:]])
 
@@ -98,7 +98,7 @@ async def writing_phase(state: ContentGenerationState):
         plan_content = plan["plan"]
         if len(encoding.encode(plan_content)) > 1000:
             tokens = encoding.encode(plan_content)
-            truncated_tokens = tokens[:1000]
+            truncated_tokens = tokens[:500]
             plan_content = encoding.decode(truncated_tokens)
             plan_content += "\n\n[ПЛАН ОБРЕЗАН]"
 

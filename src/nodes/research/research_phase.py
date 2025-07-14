@@ -5,7 +5,7 @@ from langgraph.prebuilt import create_react_agent
 
 from llms import llm
 from models import Section
-from tools import tools
+from utils.tools import tools
 
 
 async def research_phase(state):
