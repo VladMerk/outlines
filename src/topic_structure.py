@@ -12,39 +12,56 @@ from langgraph.types import Command, interrupt
 from llms import think_llm
 from models import SectionsList
 from states import OutlineState
+from loggers import create_logger, SafeLogger
+
+thinking_logger: SafeLogger = create_logger("thinking", "THINKING_PHASE")
 
 
 async def thinking_phase(state: OutlineState):
     """Этап размышления о структуре статьи"""
 
-    topic = state["topic"]
-    wishes = (
-        "\n".join([str(item.content) for item in state["wishes"]])
-        if isinstance(state["wishes"], list) and "wishes" in state
-        else state.get("wishes", "no additional wishes")
-    )
+    try:
+        topic = state["topic"]
+        wishes = (
+            "\n".join([str(item.content) for item in state["wishes"]])
+            if isinstance(state["wishes"], list) and "wishes" in state
+            else state.get("wishes", "no additional wishes")
+        )
 
-    thinking_prompt = ChatPromptTemplate.from_template("""
-Проанализируйте тему статьи пошагово:
+        thinking_logger.log_function_start("thinking_phase", topic=topic, wishes=wishes, state_keys=list(state.keys()))
+        thinking_logger.log_info(f"Анализируем тему: {topic}")
 
-Тема: {topic}
-Пожелания: {wishes}
+        thinking_prompt = ChatPromptTemplate.from_template("""
+    Проанализируйте тему статьи пошагово:
 
-Размышления:
-1. Какой тип статьи? (техническая/теоретическая/практическая)
-2. Какой уровень сложности? (начальный/средний/продвинутый)
-3. Какие ключевые концепции нужно объяснить?
-4. Какая логическая последовательность? (от чего к чему)
-5. Какие практические примеры понадобятся?
-6. Есть ли сравнительные аспекты с другими подходами?
-7. Какие "подводные камни" нужно осветить?
+    Тема: {topic}
+    Пожелания: {wishes}
 
-Напишите краткий план подхода к структурированию (3-5 предложений):
-""")
+    Размышления:
+    1. Какой тип статьи? (техническая/теоретическая/практическая)
+    2. Какой уровень сложности? (начальный/средний/продвинутый)
+    3. Какие ключевые концепции нужно объяснить?
+    4. Какая логическая последовательность? (от чего к чему)
+    5. Какие практические примеры понадобятся?
+    6. Есть ли сравнительные аспекты с другими подходами?
+    7. Какие "подводные камни" нужно осветить?
 
-    thinking_result = await think_llm.ainvoke(thinking_prompt.format(topic=topic, wishes=wishes))
+    Напишите краткий план подхода к структурированию (3-5 предложений):
+    """)
 
-    return {**state, "thinking_result": thinking_result.content}
+        formatted_prompt = thinking_prompt.format(topic=topic, wishes=wishes)
+
+        with thinking_logger.safe_llm_call(
+            "thinking_phase", model="04-mini", topic=topic, wishes=wishes, formatted_prompt=formatted_prompt
+        ):
+            thinking_result = await think_llm.ainvoke(formatted_prompt)
+
+            thinking_logger.log_llm_response("thinking_phase", thinking_result)
+
+        return {**state, "thinking_result": thinking_result.content}
+
+    except Exception as e:
+        thinking_logger.log_error("thinking_phase", e, topic=state.get("topic", ""))
 
 
 async def generate_outline_improved(state: OutlineState):

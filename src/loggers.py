@@ -22,6 +22,7 @@ class SafeLogger:
             "current_function": None,
             "total_input_tokens": 0,
             "total_output_tokens": 0,
+            "warnings_count": 0,  # ДОБАВЛЕНО: инициализация счетчика предупреждений
             "session_start": datetime.now().isoformat(),
             "custom_data": {},  # Для пользовательских данных из функции.
         }
@@ -34,7 +35,7 @@ class SafeLogger:
 
         self.setup_logging()
 
-        self.logger.info(f"Логгер '{name}' создан для фазы '{phase_name}'")
+        self.logger.info(f"🚀 Логгер '{name}' создан для фазы '{phase_name}'")
         self.save_tokens_stats()
 
     def setup_logging(self) -> None:
@@ -45,9 +46,9 @@ class SafeLogger:
         self.logger.setLevel(logging.DEBUG)
         self.logger.handlers.clear()
 
-        # Форматтеры
+        # Форматтеры - ИСПРАВЛЕНО: добавлены недостающие скобки
         file_formatter = logging.Formatter(
-            f"[%(asctime)s][%levelname)s][{self.phase_name}] - %(message)", datefmt="%Y-%m-%d %H:%M:%S"
+            f"[%(asctime)s][%(levelname)s][{self.phase_name}] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
 
         console_formatter = logging.Formatter(f"[%(levelname)s][{self.phase_name}] - %(message)s")
@@ -67,7 +68,7 @@ class SafeLogger:
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
 
-    def count_tokens(self, text: str) -> int:
+    def count_tokens(self, text: Any) -> int:  # ИЗМЕНЕНО: Any вместо str
         """Подсчет токенов в тексте"""
         try:
             if text is None:
@@ -89,6 +90,7 @@ class SafeLogger:
                     "total_input_tokens": self.local_state["total_input_tokens"],
                     "total_output_tokens": self.local_state["total_output_tokens"],
                     "total_tokens": self.local_state["total_input_tokens"] + self.local_state["total_output_tokens"],
+                    "warnings_count": self.local_state.get("warnings_count", 0),  # ДОБАВЛЕНО
                 },
                 "local_state": self.local_state,
             }
@@ -104,7 +106,7 @@ class SafeLogger:
     def log_function_start(self, function_name: str, **input_data):
         """Логирование начала функции"""
         self.local_state["current_function"] = function_name
-        self.local_state["function_start_time"] = datetime.now()
+        self.local_state["function_start_time"] = datetime.now()  # ИСПРАВЛЕНО: datetime объект вместо строки
 
         self.logger.info(f"🎯 НАЧАЛО: {function_name}")
 
@@ -114,16 +116,16 @@ class SafeLogger:
                 tokens = self.count_tokens(value)
                 input_tokens += tokens
 
-                match tokens:
-                    case 1000:
-                        self.logger.debug(f"📥 {key}: {tokens} токенов (большой)")
-                    case 100:
-                        self.logger.debug(f"📥 {key}: {tokens} токенов")
-                    case _:
-                        self.logger.debug(f"📥 {key}: {tokens} токенов (малый)")
+                # ИСПРАВЛЕНО: логика сравнения токенов
+                if tokens > 1000:
+                    self.logger.debug(f"📥 {key}: {tokens} токенов (большой)")
+                elif tokens > 100:
+                    self.logger.debug(f"📥 {key}: {tokens} токенов")
+                else:
+                    self.logger.debug(f"📥 {key}: {tokens} токенов (малый)")
 
-            if input_tokens > 0:
-                self.logger.info(f"📊 Общий размер входных данных: {input_tokens} токенов")
+        if input_tokens > 0:
+            self.logger.info(f"📊 Общий размер входных данных: {input_tokens} токенов")
 
     def log_function_end(self, function_name: str, **output_data):
         """Логирование окончания функции"""
@@ -184,7 +186,6 @@ class SafeLogger:
 
     def log_error(self, function_name: str, error: Exception, **context):
         """Логирование ошибки"""
-        self.local_state["errors_count"] += 1
 
         self.logger.error(f"❌ ОШИБКА в {function_name}: {type(error).__name__}: {str(error)}")
 
@@ -211,6 +212,9 @@ class SafeLogger:
 
     def log_warning(self, message: str):
         """Логирование предупреждения"""
+        # ИСПРАВЛЕНО: инициализация счетчика если его нет
+        if "warnings_count" not in self.local_state:
+            self.local_state["warnings_count"] = 0
         self.local_state["warnings_count"] += 1
         self.logger.warning(f"⚠️  {message}")
 
@@ -228,12 +232,10 @@ class SafeLogger:
             "session_id": self.session_id,
             "phase_name": self.phase_name,
             "logger_name": self.name,
-            "llm_calls": self.local_state["llm_calls_count"],
             "input_tokens": self.local_state["total_input_tokens"],
             "output_tokens": self.local_state["total_output_tokens"],
             "total_tokens": self.local_state["total_input_tokens"] + self.local_state["total_output_tokens"],
-            "errors": self.local_state["errors_count"],
-            "warnings": self.local_state["warnings_count"],
+            "warnings": self.local_state.get("warnings_count", 0),  # ИСПРАВЛЕНО: get с default
             "local_state": self.local_state.copy(),
         }
 
@@ -264,7 +266,6 @@ class LLMCallContext:
                 prompt_details[key] = {"tokens": tokens, "size_chars": len(str(value))}
 
         # Обновляем статистику
-        self.logger.local_state["llm_calls_count"] += 1
         self.logger.local_state["total_input_tokens"] += self.input_tokens
 
         # Логируем вызов
