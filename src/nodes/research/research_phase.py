@@ -6,16 +6,22 @@ from langgraph.prebuilt import create_react_agent
 from llms import llm
 from models import Section
 from utils.tools import tools
+from loggers import create_logger, SafeLogger
+
+
+research_logger: SafeLogger = create_logger("reaserch", "REASERCH_PHASE")
 
 
 async def research_phase(state):
     """Оптимизированная фаза исследования - меньше запросов, больше эффективности"""
 
+    research_logger.log_function_start("research_phase")
+
     topic = state["topic"]
     sections = [Section.model_validate(section) for section in state["sections"]]
     encoding = tiktoken.encoding_for_model("gpt-4o-mini")
 
-    print(f"🔍 Начинаем оптимизированное исследование для {len(sections)} секций...")
+    research_logger.log_info(f"🔍 Начинаем оптимизированное исследование для {len(sections)} секций...")
 
     # ЭТАП 1: Глобальный анализ - что вообще нужно искать
     global_analysis = await _analyze_research_needs(topic, sections)
@@ -26,13 +32,15 @@ async def research_phase(state):
     # ЭТАП 3: Распределение результатов по секциям
     section_results = await _distribute_results(sections, batch_results, encoding)
 
-    print(f"✅ Исследование завершено. Использовано запросов: {batch_results['search_count']}")
+    research_logger.log_info(f"✅ Исследование завершено. Использовано запросов: {batch_results['search_count']}")
+    research_logger.log_function_end("research_phase")
 
     return {**state, "research_results": section_results}
 
 
 async def _analyze_research_needs(topic: str, sections: list[Section]) -> dict:
     """Анализ всех секций сразу для определения общих потребностей"""
+    research_logger.log_function_start("_analyze_research_needs")
 
     analysis_prompt = ChatPromptTemplate.from_template("""
 Проанализируйте ВСЕ секции статьи и определите общие потребности в исследовании:
@@ -58,13 +66,21 @@ async def _analyze_research_needs(topic: str, sections: list[Section]) -> dict:
     # Формируем сводку всех секций
     sections_info = "\n".join([f"- {section.section_title}: {section.content}" for section in sections])
 
-    result = await llm.ainvoke(analysis_prompt.format(topic=topic, sections_info=sections_info))
+    analysis_prompt_format = analysis_prompt.format(topic=topic, sections_info=sections_info)
+
+    with research_logger.safe_llm_call(
+        "_analyze_research_needs", model="gpt-4o-mini", analysis_prompt_format=analysis_prompt_format
+    ):
+        result = await llm.ainvoke(analysis_prompt_format)
+
+    research_logger.log_function_end("_analyze_research_needs", result=result.content)
 
     return {"analysis": result.content, "sections_count": len(sections)}
 
 
 async def _conduct_batch_search(topic: str, global_analysis: dict, encoding) -> dict:
     """Пакетный поиск - делаем мало запросов, получаем много информации"""
+    research_logger.log_function_start("_conduct_batch_search")
 
     # Создаем умного агента для пакетного поиска
     batch_prompt = ChatPromptTemplate.from_messages(
@@ -106,9 +122,12 @@ async def _conduct_batch_search(topic: str, global_analysis: dict, encoding) -> 
     batch_agent = create_react_agent(model=llm, tools=tools)
 
     batch_chain = batch_prompt | batch_agent
+    # batch_prompt_format = batch_prompt.format(topic=topic, analysis=global_analysis["analysis"])
 
-    # Ограничиваем через prompt и контроль результата
-    result = await batch_chain.ainvoke({"topic": topic, "analysis": global_analysis["analysis"]})
+    with research_logger.safe_llm_call(
+        "_conduct_batch_search", model="gpt-4o-mini", topic=topic, analysis=global_analysis["analysis"]
+    ):
+        result = await batch_chain.ainvoke({"topic": topic, "analysis": global_analysis["analysis"]})
 
     # Извлекаем все результаты поиска
     tool_messages: list[ToolMessage] = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
@@ -123,6 +142,8 @@ async def _conduct_batch_search(topic: str, global_analysis: dict, encoding) -> 
         combined_results = encoding.decode(truncated_tokens)
         combined_results += "\n\n[ПАКЕТНЫЕ ДАННЫЕ ОБРЕЗАНЫ ДЛЯ ОПТИМИЗАЦИИ]"
 
+    research_logger.log_function_end("_conduct_batch_search", combined_results=combined_results)
+
     return {
         "combined_research": combined_results,
         "search_count": len(tool_messages),  # Количество использованных результатов
@@ -131,6 +152,7 @@ async def _conduct_batch_search(topic: str, global_analysis: dict, encoding) -> 
 
 async def _distribute_results(sections: list[Section], batch_results: dict, encoding) -> list:
     """Распределение пакетных результатов по секциям"""
+    research_logger.log_function_start("_distribute_results")
 
     distribution_prompt = ChatPromptTemplate.from_template("""
 Распределите найденную информацию по конкретной секции:
@@ -153,15 +175,19 @@ async def _distribute_results(sections: list[Section], batch_results: dict, enco
     research_data = batch_results["combined_research"]
 
     for section in sections:
-        result = await llm.ainvoke(
-            distribution_prompt.format(
-                section_title=section.section_title, section_description=section.content, research_data=research_data
-            )
+        distribution_prompt_format = distribution_prompt.format(
+            section_title=section.section_title, section_description=section.content, research_data=research_data
         )
+        with research_logger.safe_llm_call(
+            "_distribute_results", model="gpt-4o-mini", distribution_prompt_format=distribution_prompt_format
+        ):
+            result = await llm.ainvoke(distribution_prompt_format)
 
         # Контроль размера для каждой секции
         distributed_content = result.content
         max_section_tokens = 1000  # Меньше лимит для распределенных данных
+
+        research_logger.log_info(f"Len distributed_content in tokens: {research_logger.count_tokens(distributed_content)}")
 
         if len(encoding.encode(distributed_content)) > max_section_tokens:
             tokens = encoding.encode(distributed_content)
@@ -176,5 +202,8 @@ async def _distribute_results(sections: list[Section], batch_results: dict, enco
                 "research_data": distributed_content,
             }
         )
+    section_results_research = [section["research_data"] for section in section_results]
+    research_logger.local_state["custom_data"]["research_data"] = section_results_research
+    research_logger.log_function_end("_distribute_results", section_results=section_results_research)
 
     return section_results

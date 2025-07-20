@@ -106,7 +106,7 @@ class SafeLogger:
     def log_function_start(self, function_name: str, **input_data):
         """Логирование начала функции"""
         self.local_state["current_function"] = function_name
-        self.local_state["function_start_time"] = datetime.now()  # ИСПРАВЛЕНО: datetime объект вместо строки
+        self.local_state["function_start_time"] = datetime.now().isoformat()  # ИСПРАВЛЕНО: datetime объект вместо строки
 
         self.logger.info(f"🎯 НАЧАЛО: {function_name}")
 
@@ -132,8 +132,10 @@ class SafeLogger:
         # Вычисляем время выполнения
         duration = None
         if "function_start_time" in self.local_state:
-            start_time = self.local_state["function_start_time"]
+            start_time = datetime.fromisoformat(self.local_state["function_start_time"])
             duration = (datetime.now() - start_time).total_seconds()
+
+        self.local_state["function_end_time"] = datetime.now().isoformat()
 
         self.logger.info(f"✅ ЗАВЕРШЕНИЕ: {function_name}" + (f" за {duration:.2f}с" if duration else ""))
 

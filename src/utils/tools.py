@@ -14,11 +14,14 @@ from markdownify import markdownify
 from tavily import TavilyClient
 
 from llms import llm
+from loggers import create_logger, SafeLogger
 
 warnings.catch_warnings()
 warnings.simplefilter("ignore")
 
 load_dotenv()
+
+tools_logger: SafeLogger = create_logger("tools", "TOOLS")
 
 # Инициализация Tavily клиента
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
@@ -31,11 +34,17 @@ async def search_engine(query: str) -> str:
         # Tavily поиск с настройками для технического контента
         response = tavily_client.search(
             query=query,
-            max_results=3,
+            max_results=2,
             search_depth="advanced",  # Более глубокий поиск
+            # search_depth="basic",
             include_answer=True,  # Включить краткий ответ
             include_raw_content=True,  # Включить полный контент
         )
+
+        tools_logger.log_info(f"Type of response: {type(response)}")
+        tools_logger.log_info(f"Type of results: {type(response['results'][0])}")
+        tools_logger.log_info(f"Keys: {response.keys()}")
+        tools_logger.log_info(f"Keys: {response['results'][0].keys()}")
 
         output_text = ""
 
@@ -50,12 +59,15 @@ async def search_engine(query: str) -> str:
             title = result.get("title", "Без названия")
             url = result.get("url", "")
             content = result.get("content", "")
+            raw_content = result.get("raw_content", "")
+            tools_logger.log_info(f"Raw content в токенах: {tools_logger.count_tokens(raw_content)}")
 
             output_text += f"**Источник {i}: {title}**\n"
             output_text += f"URL: {url}\n"
-            output_text += f"Содержание: {content}\n"
+            output_text += f"Содержание:\n {content}\n"
             output_text += "-" * 80 + "\n\n"
 
+        tools_logger.log_info(f"Окончательный текст инструмента в токенах:\n{tools_logger.count_tokens(output_text)}")
         return output_text.strip()
 
     except Exception as e:
@@ -194,14 +206,19 @@ if __name__ == "__main__":
 
         print("=== Тест обычного поиска ===")
         result1 = await search_engine.ainvoke("Builder pattern in Rust")
-        print(result1[:500] + "..." if len(result1) > 500 else result1)
+        # print(result1[:500] + "..." if len(result1) > 500 else result1)
+        print(result1)
 
-        print("\n=== Тест поиска кода ===")
-        result2 = await code_search_engine.ainvoke("Rust Builder pattern implementation")
-        print(result2[:500] + "..." if len(result2) > 500 else result2)
+        result2 = await search_engine.ainvoke("События 17 июня 1953 года в Берлине.")
+        print(result2)
+
+        # print("\n=== Тест поиска кода ===")
+        # result2 = await code_search_engine.ainvoke("Rust Builder pattern implementation")
+        # print(result2[:500] + "..." if len(result2) > 500 else result2)
 
         print("\n=== Тест Wikipedia ===")
         result3 = wikipedia_tool.run("Builder pattern")
-        print(result3[:300] + "..." if len(result3) > 300 else result3)
+        # print(result3[:300] + "..." if len(result3) > 300 else result3)
+        print(result3)
 
     asyncio.run(main())

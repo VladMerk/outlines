@@ -58,10 +58,15 @@ async def thinking_phase(state: OutlineState):
 
             thinking_logger.log_llm_response("thinking_phase", thinking_result)
 
+        # Логируем завершение функции
+        thinking_logger.log_function_end(
+            "thinking_phase", thinking_result=thinking_result.content, result_length=len(thinking_result.content)
+        )
         return {**state, "thinking_result": thinking_result.content}
 
     except Exception as e:
         thinking_logger.log_error("thinking_phase", e, topic=state.get("topic", ""))
+        raise
 
 
 async def generate_outline_improved(state: OutlineState):
